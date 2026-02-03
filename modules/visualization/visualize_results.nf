@@ -57,9 +57,8 @@ process VISUALIZE_RESULTS {
     def trace_arg = isValidInput(trace_file) ? "--trace ${getFirstFile(trace_file)}" : ""
     def versions_arg = isValidInput(versions_file) ? "--versions ${getFirstFile(versions_file)}" : ""
     def mibig_arg = params.bigscape_mibig_version ? "--mibig_included" : ""
-    def skip_tree_arg = params.skip_tree ? "--skip_tree" : ""
     def outgroup_arg = params.gtdbtk_outgroup ? "--outgroup '${params.gtdbtk_outgroup}'" : ""
     """
-    python ${projectDir}/scripts/visualize_results.py ${counts_arg} ${tab_arg} ${assembly_arg} ${name_map_arg} ${taxonomy_map_arg} ${taxonomy_tree_arg} ${bigslice_stats_arg} ${bigscape_stats_arg} ${bigscape_db_arg} ${gcf_data_arg} ${phylo_tree_arg} ${gtdbtk_summary_arg} ${trace_arg} ${versions_arg} ${mibig_arg} ${skip_tree_arg} ${outgroup_arg} --outdir . --taxon "${taxon}"
+    python ${projectDir}/scripts/visualize_results.py ${counts_arg} ${tab_arg} ${assembly_arg} ${name_map_arg} ${taxonomy_map_arg} ${taxonomy_tree_arg} ${bigslice_stats_arg} ${bigscape_stats_arg} ${bigscape_db_arg} ${gcf_data_arg} ${phylo_tree_arg} ${gtdbtk_summary_arg} ${trace_arg} ${versions_arg} ${mibig_arg} ${outgroup_arg} --outdir . --taxon "${taxon}"
     """
 }

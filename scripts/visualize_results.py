@@ -7,7 +7,7 @@ Includes:
 - Tab-based HTML report with sections (Overview, Taxonomy, BGC Distribution, Genomes, Clustering)
 - Summary statistics dashboard with tabulation stats
 - Taxonomic distribution tree (interactive expandable)
-- GCF × Taxonomy heatmap and distribution analysis (replaces tree visualization)
+- GCF x Taxonomy heatmap and distribution analysis (replaces tree visualization)
 - Donut chart for BGC type distribution
 - BGC histogram showing distribution across genomes
 - Searchable genome table
@@ -2148,9 +2148,14 @@ def extract_assembly_id_from_genome_name(genome_name):
     return None
 
 
-def build_gcf_taxonomy_distribution(gcf_data, taxonomy_map):
+def build_gcf_taxonomy_distribution(gcf_data, taxonomy_map, name_map=None):
     """
-    Build GCF × Taxonomy distribution data.
+    Build GCF x Taxonomy distribution data.
+
+    Args:
+        gcf_data: GCF data from extract_gcf_representatives.py
+        taxonomy_map: Taxonomy map keyed by assembly ID
+        name_map: Optional dict mapping assembly_id -> genome_name (used to create reverse lookup)
 
     Returns:
         dict with:
@@ -2165,14 +2170,38 @@ def build_gcf_taxonomy_distribution(gcf_data, taxonomy_map):
 
     genome_gcf_mapping = gcf_data.get('genome_gcf_mapping', {})
     family_metadata = gcf_data.get('family_metadata', {})
+    gcfs = gcf_data.get('gcfs', [])
 
     if not genome_gcf_mapping:
         return None
 
+    # Enhance family_metadata with KCB hit info from gcfs array
+    for gcf in gcfs:
+        family_id = str(gcf.get('family_id', ''))
+        if family_id in family_metadata:
+            kcb_hit = gcf.get('kcb_hit', '')
+            kcb_acc = gcf.get('kcb_acc', '')
+            # Handle NaN/float values
+            if kcb_hit is None or (isinstance(kcb_hit, float) and str(kcb_hit) == 'nan'):
+                kcb_hit = ''
+            if kcb_acc is None or (isinstance(kcb_acc, float) and str(kcb_acc) == 'nan'):
+                kcb_acc = ''
+            family_metadata[family_id]['kcb_hit'] = str(kcb_hit) if kcb_hit else ''
+            family_metadata[family_id]['kcb_acc'] = str(kcb_acc) if kcb_acc else ''
+
+    # Build reverse name_map: genome_name -> assembly_id
+    reverse_name_map = {}
+    if name_map:
+        reverse_name_map = {v: k for k, v in name_map.items()}
+
     # Build genome -> taxonomy lookup
     genome_to_taxonomy = {}
     for genome_name in genome_gcf_mapping.keys():
-        assembly_id = extract_assembly_id_from_genome_name(genome_name)
+        # First try using reverse name_map
+        assembly_id = reverse_name_map.get(genome_name)
+        # Fallback: try extracting from genome name (for names that include assembly ID)
+        if not assembly_id:
+            assembly_id = extract_assembly_id_from_genome_name(genome_name)
         if assembly_id and assembly_id in taxonomy_map:
             tax_info = taxonomy_map[assembly_id]
             lineage = tax_info.get('lineage', {})
@@ -2206,7 +2235,7 @@ def build_gcf_taxonomy_distribution(gcf_data, taxonomy_map):
             gcf_taxonomy[gcf_id_str]['genera'][genus] = gcf_taxonomy[gcf_id_str]['genera'].get(genus, 0) + 1
             gcf_taxonomy[gcf_id_str]['species'][species] = gcf_taxonomy[gcf_id_str]['species'].get(species, 0) + 1
 
-    # Build heatmap data (GCF × Genus)
+    # Build heatmap data (GCF x Genus)
     heatmap_data = {}
     for gcf_id, tax_dist in gcf_taxonomy.items():
         heatmap_data[gcf_id] = tax_dist['genera']
@@ -2228,10 +2257,10 @@ def build_gcf_taxonomy_distribution(gcf_data, taxonomy_map):
     }
 
 
-def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=None):
+def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=None, name_map=None):
     """
     Generate HTML for BGC Distribution tab (replaces Tree View).
-    Shows GCF × Taxonomy heatmap and distribution insights.
+    Shows GCF x Taxonomy heatmap and distribution insights.
     """
     # Try to use GTDB-Tk taxonomy if available (more accurate)
     taxonomy_source = "NCBI"
@@ -2269,7 +2298,7 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
         except Exception as e:
             print(f"Warning: Could not load GTDB-Tk taxonomy: {e}")
 
-    dist_data = build_gcf_taxonomy_distribution(gcf_data, taxonomy_map)
+    dist_data = build_gcf_taxonomy_distribution(gcf_data, taxonomy_map, name_map)
 
     if not dist_data:
         return '''
@@ -2327,33 +2356,54 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
 
         meta = family_metadata.get(gcf_id, {})
         product = meta.get('product', 'Unknown')
+        kcb_hit = meta.get('kcb_hit', '')
+        kcb_acc = meta.get('kcb_acc', '')
 
         if num_genera == 1 and total_bgcs >= 3:
             gcf_specificity.append({
                 'gcf_id': gcf_id,
                 'genus': genera_with_gcf[0],
                 'count': total_bgcs,
-                'product': product
+                'product': product,
+                'kcb_hit': kcb_hit,
+                'kcb_acc': kcb_acc
             })
         elif num_genera >= 5:
             gcf_widespread.append({
                 'gcf_id': gcf_id,
                 'num_genera': num_genera,
                 'count': total_bgcs,
-                'product': product
+                'product': product,
+                'kcb_hit': kcb_hit,
+                'kcb_acc': kcb_acc
             })
 
     # Sort by count
     gcf_specificity.sort(key=lambda x: -x['count'])
     gcf_widespread.sort(key=lambda x: -x['num_genera'])
 
+    # Helper to create status badge HTML
+    def make_status_badge(kcb_hit, kcb_acc):
+        if kcb_hit:
+            # Known compound - green badge with link to MIBiG if available
+            hit_display = kcb_hit[:25] + '...' if len(kcb_hit) > 25 else kcb_hit
+            if kcb_acc:
+                return f'<a href="https://mibig.secondarymetabolites.org/repository/{kcb_acc}" target="_blank" style="background: #d4edda; color: #155724; padding: 2px 6px; border-radius: 3px; font-size: 0.85em; text-decoration: none;" title="{kcb_hit}">{hit_display}</a>'
+            else:
+                return f'<span style="background: #d4edda; color: #155724; padding: 2px 6px; border-radius: 3px; font-size: 0.85em;" title="{kcb_hit}">{hit_display}</span>'
+        else:
+            # Potentially novel - amber badge
+            return '<span style="background: #fff3cd; color: #856404; padding: 2px 6px; border-radius: 3px; font-size: 0.85em;">Potentially Novel</span>'
+
     # Build specificity insights HTML
     specificity_rows = ''
     for item in gcf_specificity[:10]:
+        status_badge = make_status_badge(item.get('kcb_hit', ''), item.get('kcb_acc', ''))
         specificity_rows += f'''
             <tr>
                 <td style="padding: 6px 10px;">GCF-{item['gcf_id']}</td>
-                <td style="padding: 6px 10px;">{item['product'][:35]}</td>
+                <td style="padding: 6px 10px;">{item['product'][:30]}</td>
+                <td style="padding: 6px 10px;">{status_badge}</td>
                 <td style="padding: 6px 10px; font-weight: bold;">{item['genus']}</td>
                 <td style="padding: 6px 10px; text-align: right;">{item['count']}</td>
             </tr>
@@ -2361,10 +2411,12 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
 
     widespread_rows = ''
     for item in gcf_widespread[:10]:
+        status_badge = make_status_badge(item.get('kcb_hit', ''), item.get('kcb_acc', ''))
         widespread_rows += f'''
             <tr>
                 <td style="padding: 6px 10px;">GCF-{item['gcf_id']}</td>
-                <td style="padding: 6px 10px;">{item['product'][:35]}</td>
+                <td style="padding: 6px 10px;">{item['product'][:30]}</td>
+                <td style="padding: 6px 10px;">{status_badge}</td>
                 <td style="padding: 6px 10px; text-align: right;">{item['num_genera']}</td>
                 <td style="padding: 6px 10px; text-align: right;">{item['count']}</td>
             </tr>
@@ -2376,12 +2428,12 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
         Shows which Gene Cluster Families (GCFs) are taxon-specific vs widespread.</em>
     </p>
 
-    <h3>GCF × Genus Heatmap</h3>
+    <h3>GCF x Genus Heatmap</h3>
     <p style="color: #666; font-size: 0.9em; margin-bottom: 10px;">
         Top 30 GCFs (rows) vs top 20 genera (columns). Color intensity = number of BGCs.
     </p>
-    <div id="heatmap-container" style="width: 100%; overflow-x: auto; margin-bottom: 30px;">
-        <canvas id="heatmap-canvas" style="max-width: 100%;"></canvas>
+    <div id="heatmap-container" style="width: 100%; max-width: 900px; margin-bottom: 30px;">
+        <canvas id="heatmap-canvas"></canvas>
     </div>
 
     <script>
@@ -2390,15 +2442,28 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
             const canvas = document.getElementById('heatmap-canvas');
             const ctx = canvas.getContext('2d');
 
-            const cellWidth = 45;
-            const cellHeight = 22;
-            const labelWidth = 180;
-            const labelHeight = 120;
             const rows = data.rows;
             const cols = data.columns;
 
-            canvas.width = labelWidth + cols.length * cellWidth + 80;
-            canvas.height = labelHeight + rows.length * cellHeight + 20;
+            // Fixed dimensions for consistent sizing
+            const labelWidth = 200;
+            const rightMargin = 50;
+            const cellWidth = 55;
+            const cellHeight = 22;
+            const labelHeight = 100;
+
+            // Calculate canvas size (minimum width for legend text)
+            const minWidth = 480;
+            const width = Math.max(minWidth, labelWidth + cols.length * cellWidth + rightMargin);
+            const height = labelHeight + rows.length * cellHeight + 40;
+
+            // High-DPI canvas for sharp text
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+            ctx.scale(dpr, dpr);
 
             // Find max value for color scaling
             let maxVal = 1;
@@ -2417,16 +2482,16 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
             }}
 
             ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, width, height);
 
             // Draw column labels (genera) - rotated
             ctx.save();
-            ctx.font = '10px sans-serif';
+            ctx.font = 'bold 11px sans-serif';
             ctx.fillStyle = '#333';
             cols.forEach((col, i) => {{
                 ctx.save();
                 ctx.translate(labelWidth + i * cellWidth + cellWidth/2, labelHeight - 5);
-                ctx.rotate(-Math.PI / 3);
+                ctx.rotate(-Math.PI / 4);
                 ctx.textAlign = 'left';
                 ctx.fillText(col.length > 15 ? col.slice(0, 15) + '...' : col, 0, 0);
                 ctx.restore();
@@ -2438,10 +2503,11 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
                 const y = labelHeight + i * cellHeight;
 
                 // Row label (GCF)
-                ctx.font = '10px sans-serif';
+                ctx.font = '11px sans-serif';
                 ctx.fillStyle = '#333';
                 ctx.textAlign = 'right';
-                ctx.fillText(`GCF-${{row.gcf_id}} ${{row.product}}`, labelWidth - 5, y + cellHeight/2 + 3);
+                const label = `GCF-${{row.gcf_id}} ${{row.product}}`;
+                ctx.fillText(label.length > 26 ? label.slice(0, 26) + '...' : label, labelWidth - 5, y + cellHeight/2 + 4);
 
                 // Cells
                 row.values.forEach((value, j) => {{
@@ -2452,7 +2518,7 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
                     // Show value if > 0
                     if (value > 0) {{
                         ctx.fillStyle = value > maxVal * 0.5 ? 'white' : '#333';
-                        ctx.font = '9px sans-serif';
+                        ctx.font = 'bold 10px sans-serif';
                         ctx.textAlign = 'center';
                         ctx.fillText(value.toString(), x + cellWidth/2, y + cellHeight/2 + 3);
                     }}
@@ -2460,22 +2526,22 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
 
                 // Member count on right
                 ctx.fillStyle = '#666';
-                ctx.font = '9px sans-serif';
+                ctx.font = '10px sans-serif';
                 ctx.textAlign = 'left';
                 ctx.fillText(`(${{row.member_count}})`, labelWidth + cols.length * cellWidth + 5, y + cellHeight/2 + 3);
             }});
 
             // Legend
-            const legendY = labelHeight + rows.length * cellHeight + 10;
-            ctx.font = '10px sans-serif';
+            const legendY = labelHeight + rows.length * cellHeight + 25;
+            ctx.font = '11px sans-serif';
             ctx.fillStyle = '#666';
             ctx.textAlign = 'left';
-            ctx.fillText('Color: BGC count (darker = more)', labelWidth, legendY);
+            ctx.fillText('Color intensity: BGC count (darker = more BGCs in that genus)', 10, legendY);
         }})();
     </script>
 
     <div style="display: flex; gap: 30px; flex-wrap: wrap; margin-top: 20px;">
-        <div style="flex: 1; min-width: 400px;">
+        <div style="flex: 1; min-width: 450px;">
             <h3>Genus-Specific GCFs</h3>
             <p style="color: #666; font-size: 0.9em; margin-bottom: 10px;">
                 GCFs found in only one genus (potential taxon-specific metabolites)
@@ -2485,17 +2551,18 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
                     <tr style="background: #f0f4f8;">
                         <th style="padding: 8px 10px; text-align: left;">GCF</th>
                         <th style="padding: 8px 10px; text-align: left;">Product</th>
+                        <th style="padding: 8px 10px; text-align: left;">Status</th>
                         <th style="padding: 8px 10px; text-align: left;">Genus</th>
                         <th style="padding: 8px 10px; text-align: right;">BGCs</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {specificity_rows if specificity_rows else '<tr><td colspan="4" style="padding: 10px; color: #666;">No genus-specific GCFs found</td></tr>'}
+                    {specificity_rows if specificity_rows else '<tr><td colspan="5" style="padding: 10px; color: #666;">No genus-specific GCFs found</td></tr>'}
                 </tbody>
             </table>
         </div>
 
-        <div style="flex: 1; min-width: 400px;">
+        <div style="flex: 1; min-width: 450px;">
             <h3>Widespread GCFs</h3>
             <p style="color: #666; font-size: 0.9em; margin-bottom: 10px;">
                 GCFs found across 5+ genera (conserved or horizontally transferred)
@@ -2505,18 +2572,25 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
                     <tr style="background: #f0f4f8;">
                         <th style="padding: 8px 10px; text-align: left;">GCF</th>
                         <th style="padding: 8px 10px; text-align: left;">Product</th>
+                        <th style="padding: 8px 10px; text-align: left;">Status</th>
                         <th style="padding: 8px 10px; text-align: right;">Genera</th>
                         <th style="padding: 8px 10px; text-align: right;">BGCs</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {widespread_rows if widespread_rows else '<tr><td colspan="4" style="padding: 10px; color: #666;">No widespread GCFs found</td></tr>'}
+                    {widespread_rows if widespread_rows else '<tr><td colspan="5" style="padding: 10px; color: #666;">No widespread GCFs found</td></tr>'}
                 </tbody>
             </table>
         </div>
     </div>
 
-    <div style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
+    <div style="margin-top: 20px; padding: 12px 16px; background: linear-gradient(135deg, rgba(106, 90, 160, 0.1) 0%, rgba(78, 115, 180, 0.1) 100%); border: 1px solid rgba(106, 90, 160, 0.2); border-radius: 6px;">
+        <p style="margin: 0; color: #4a5568; font-size: 0.95em;">
+            <strong style="color: #6a5aa0;">See the Clustering tab</strong> for detailed GCF analysis including gene diagrams, domain annotations, and links to antiSMASH results.
+        </p>
+    </div>
+
+    <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
         <h4 style="margin-top: 0;">Summary Statistics</h4>
         <ul style="margin: 10px 0; color: #555;">
             <li><strong>{len(gcf_taxonomy)}</strong> GCFs analyzed across <strong>{len(genera)}</strong> genera</li>
@@ -3242,7 +3316,7 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
                          donut_chart_generated=False, phylo_tree_generated=False, genome_table_html='',
                          resource_usage_html='', phylo_tree_data=None, gcf_data=None, taxonomy_map=None,
                          bigslice_section_html='', versions_data=None, rarefaction_stats=None,
-                         gtdbtk_summary_path=None):
+                         gtdbtk_summary_path=None, name_map=None):
     '''Generate tab-based HTML report combining all visualizations'''
 
     # Clean taxon name for URLs - match Nextflow sanitizeTaxon function
@@ -3542,32 +3616,27 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
         clusters = total_gcfs - singletons
         largest_gcf = max(gcfs, key=lambda x: x.get('member_count', 0)) if gcfs else None
 
-        largest_gcf_card = ''
-        if largest_gcf:
-            largest_gcf_card = f'''
-            <div style="background: linear-gradient(135deg, #7a6855 0%, #5d4e3f 100%); color: white; padding: 20px; border-radius: 10px;">
-                <div style="font-size: 2em; font-weight: bold;">{largest_gcf.get("member_count", 0)}</div>
-                <div style="opacity: 0.9;">Largest GCF Size</div>
-                <div style="font-size: 0.85em; margin-top: 5px; opacity: 0.8;">{largest_gcf.get("product", "")[:30]}</div>
-            </div>'''
-
         clustering_summary_html = f'''
-    <div class="clustering-summary-section" style="margin-top: 30px;">
-        <h3>Clustering Summary (BiG-SCAPE)</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
-            <div style="background: linear-gradient(135deg, #5c6b7a 0%, #434d5a 100%); color: white; padding: 20px; border-radius: 10px;">
-                <div style="font-size: 2em; font-weight: bold;">{total_gcfs}</div>
-                <div style="opacity: 0.9;">Gene Cluster Families</div>
+    <div class="clustering-summary-section" style="margin-top: 20px;">
+        <h3 style="margin-bottom: 12px;">Clustering Summary (BiG-SCAPE)</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+            <div style="background: rgba(106, 90, 160, 0.15); border: 1px solid rgba(106, 90, 160, 0.3); padding: 12px 15px; border-radius: 8px;">
+                <div style="font-size: 1.6em; font-weight: bold; color: #6a5aa0;">{total_gcfs}</div>
+                <div style="color: #555; font-size: 0.9em;">Gene Cluster Families</div>
             </div>
-            <div style="background: linear-gradient(135deg, #5a7a6b 0%, #435a4d 100%); color: white; padding: 20px; border-radius: 10px;">
-                <div style="font-size: 2em; font-weight: bold;">{clusters}</div>
-                <div style="opacity: 0.9;">Multi-member GCFs</div>
+            <div style="background: rgba(128, 90, 160, 0.15); border: 1px solid rgba(128, 90, 160, 0.3); padding: 12px 15px; border-radius: 8px;">
+                <div style="font-size: 1.6em; font-weight: bold; color: #805aa0;">{clusters}</div>
+                <div style="color: #555; font-size: 0.9em;">Multi-member GCFs</div>
             </div>
-            <div style="background: linear-gradient(135deg, #7a7a7a 0%, #5a5a5a 100%); color: white; padding: 20px; border-radius: 10px;">
-                <div style="font-size: 2em; font-weight: bold;">{singletons}</div>
-                <div style="opacity: 0.9;">Singletons</div>
+            <div style="background: rgba(140, 110, 160, 0.15); border: 1px solid rgba(140, 110, 160, 0.3); padding: 12px 15px; border-radius: 8px;">
+                <div style="font-size: 1.6em; font-weight: bold; color: #8c6ea0;">{singletons}</div>
+                <div style="color: #555; font-size: 0.9em;">Singletons</div>
             </div>
-            {largest_gcf_card}
+            <div style="background: rgba(150, 120, 170, 0.15); border: 1px solid rgba(150, 120, 170, 0.3); padding: 12px 15px; border-radius: 8px;">
+                <div style="font-size: 1.6em; font-weight: bold; color: #9678aa;">{largest_gcf.get("member_count", 0) if largest_gcf else 0}</div>
+                <div style="color: #555; font-size: 0.9em;">Largest GCF Size</div>
+                <div style="font-size: 0.8em; margin-top: 3px; color: #777;">{largest_gcf.get("product", "")[:25] if largest_gcf else ""}</div>
+            </div>
         </div>
     </div>'''
 
@@ -3702,8 +3771,35 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
                 </div>
             </div>'''
 
+    # Build phylogenetic tree download info section
+    phylo_tree_download_section = ''
+    if phylo_tree_generated:
+        phylo_tree_download_section = f'''
+            <!-- Phylogenetic Tree Download Info -->
+            <div style="margin-top: 30px; padding: 20px; background: linear-gradient(135deg, #f0f7ff 0%, #e8f4f8 100%); border: 1px solid #c5dbe8; border-radius: 10px;">
+                <h3 style="margin-top: 0; color: #2c5aa0; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.3em;">&#128193;</span> Phylogenetic Tree Files
+                </h3>
+                <p style="color: #555; margin-bottom: 15px;">
+                    GTDB-Tk phylogenetic placement results are available for use with external visualization software (e.g., iTOL, FigTree, ggtree).
+                </p>
+                <div style="background: white; padding: 15px; border-radius: 6px; border: 1px solid #ddd;">
+                    <div style="margin-bottom: 10px;">
+                        <strong style="color: #333;">Pruned Newick tree:</strong>
+                        <code style="background: #f5f5f5; padding: 3px 8px; border-radius: 4px; font-size: 0.9em; margin-left: 8px;">pruned_phylo_tree.nwk</code>
+                    </div>
+                    <p style="color: #666; font-size: 0.9em; margin: 0;">
+                        This tree contains only the genomes from your analysis, pruned from the GTDB reference tree.
+                        It can be loaded directly into tree visualization tools for further annotation and analysis.
+                    </p>
+                </div>
+                <p style="color: #777; font-size: 0.85em; margin-top: 12px; margin-bottom: 0;">
+                    <strong>Full results location:</strong> <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">results/gtdbtk_results/{taxon_clean}/</code>
+                </p>
+            </div>'''
+
     # Build BGC Distribution section HTML (replaces Tree View)
-    distribution_section = generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path)
+    distribution_section = generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path, name_map)
 
     # Use distribution_section for the "BGC Distribution" tab (replaces old tree view)
     tree_section = distribution_section  # Keep variable name for template compatibility
@@ -4029,6 +4125,7 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
             </div>
             {kcb_mapping_section}
             {rarefaction_section}
+            {phylo_tree_download_section}
         </div>
 
         <!-- Tab 2: Taxonomy -->
@@ -4402,6 +4499,15 @@ def main():
         except Exception as e:
             print(f"Warning: Could not load versions file: {e}")
 
+    # Load name_map for BGC Distribution tab
+    name_map_dict = None
+    if args.name_map and args.name_map.exists():
+        try:
+            with open(args.name_map, 'r') as f:
+                name_map_dict = json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load name_map file: {e}")
+
     if args.counts or args.tabulation:
         print(f"Generating HTML report...")
         generate_html_report(args.outdir, args.taxon, table_header, table_rows, stats, tree_html,
@@ -4412,7 +4518,8 @@ def main():
                             bigslice_section_html=bigslice_section_html,
                             versions_data=versions_data,
                             rarefaction_stats=rarefaction_stats,
-                            gtdbtk_summary_path=gtdbtk_summary_path)
+                            gtdbtk_summary_path=gtdbtk_summary_path,
+                            name_map=name_map_dict)
         print(f"Visualizations complete! Open {args.outdir}/bgc_report.html in a browser.")
 
 if __name__ == '__main__':
