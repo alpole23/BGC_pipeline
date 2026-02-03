@@ -1,6 +1,6 @@
 # ClusterQuest
 
-**Quest for Biosynthetic Gene Clusters**
+**Large-Scale Organization of Secondary Metabolites"
 
 [![Nextflow](https://img.shields.io/badge/nextflow-%E2%89%A523.04-brightgreen.svg)](https://www.nextflow.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
