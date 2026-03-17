@@ -135,7 +135,19 @@ The SLURM profile automatically allocates:
 
 See the [Parameters Reference](docs/parameters.md) for the full list of configurable and non-configurable parameters, or browse [`nextflow.config`](nextflow.config) directly.
 
-See the [Module Reference](docs/MODULES.md) for a detailed description of each pipeline module.
+## Modules
+
+ClusterQuest is organized into modular subworkflows:
+
+| Module | Description |
+|--------|-------------|
+| `DOWNLOAD_GENOMES` | Download and prepare bacterial genomes from NCBI |
+| `ANTISMASH_ANALYSIS` | BGC detection with optional result reuse |
+| `CLUSTERING` | GCF clustering via BiG-SCAPE and/or BiG-SLiCE |
+| `PHYLOGENY` | Phylogenetic placement using GTDB-Tk |
+| `VISUALIZE_RESULTS` | Interactive HTML report generation |
+
+See the [Module Reference](docs/MODULES.md) for a detailed description of each module, including inputs, outputs, and configuration.
 
 ## Output Structure
 
