@@ -135,6 +135,8 @@ The SLURM profile automatically allocates:
 
 See the [Parameters Reference](docs/parameters.md) for the full list of configurable and non-configurable parameters, or browse [`nextflow.config`](nextflow.config) directly.
 
+See the [Module Reference](docs/MODULES.md) for a detailed description of each pipeline module.
+
 ## Output Structure
 
 ```
