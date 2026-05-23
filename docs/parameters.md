@@ -34,14 +34,12 @@ This page documents all configurable and non-configurable parameters in ClusterQ
 | Parameter | Default | Type | Description |
 |-----------|---------|------|-------------|
 | `--antismash_minimal` | `false` | bool | Minimal mode: skips domain analysis for faster runs. Disables most `--antismash_*` options below |
-| `--hmmdetection_rules` | `""` | string | Restrict BGC detection to specific types (e.g., `"terpene,nrps"`). Leave empty to detect all types |
-| `--antismash_cb_knownclusters` | `true` | bool | KnownClusterBlast: compare detected BGCs against MIBiG reference clusters |
 | `--antismash_cb_general` | `false` | bool | ClusterBlast: compare detected BGCs against the full antiSMASH database |
 | `--antismash_cc_mibig` | `false` | bool | ClusterCompare: advanced scoring against MIBiG (more sensitive than KnownClusterBlast) |
 | `--antismash_smcog_trees` | `true` | bool | Generate phylogenetic trees for BGC core biosynthetic genes |
 | `--reuse_antismash_from` | `null` | string | Taxon name to reuse antiSMASH results from (see [Cross-Taxon Reuse](#cross-taxon-result-reuse)) |
 
-> **Note:** `clusterhmmer` and `tigrfam` domain analyses are always enabled when `antismash_minimal = false` and cannot be turned off. This ensures consistent domain annotation across all runs.
+> **Note:** Detection is hardcoded to phosphonate BGCs only (`--hmmdetection-limit-to-rule-names phosphonate`). KnownClusterBlast (`--cb-knownclusters`), `clusterhmmer`, and `tigrfam` are always enabled and cannot be turned off.
 
 ---
 
@@ -59,10 +57,10 @@ This page documents all configurable and non-configurable parameters in ClusterQ
 
 | Parameter | Default | Type | Description |
 |-----------|---------|------|-------------|
-| `--clustering` | `"bigscape"` | string | Clustering tool: `none`, `bigscape`, `bigslice`, or `both` |
+| `--clustering` | `"bigscape"` | string | Clustering tool: `none` or `bigscape` |
 
 #### BiG-SCAPE Options
-Active when `--clustering bigscape` or `--clustering both`.
+Active when `--clustering bigscape`.
 
 | Parameter | Default | Type | Description |
 |-----------|---------|------|-------------|
@@ -72,15 +70,6 @@ Active when `--clustering bigscape` or `--clustering both`.
 | `--bigscape_classify` | `"category"` | string | BGC classification scheme: `""` (none), `"category"`, `"class"`, or `"legacy"` |
 | `--bigscape_include_singletons` | `true` | bool | Include unclustered BGCs (singletons) in GCF output |
 | `--bigscape_mix` | `false` | bool | Allow BGCs of different classes to cluster together in the same GCF |
-
-#### BiG-SLiCE Options
-Active when `--clustering bigslice` or `--clustering both`.
-
-| Parameter | Default | Type | Description |
-|-----------|---------|------|-------------|
-| `--bigslice_threshold` | `"100"` | string | Distance threshold for clustering (lower = stricter grouping) |
-| `--bigslice_query_mode` | `false` | bool | Run in query mode (compare against existing database) instead of clustering mode |
-| `--bigslice_query_db` | `""` | path | Path to an existing BiG-SLiCE database (required when `bigslice_query_mode = true`) |
 
 ---
 
@@ -131,8 +120,10 @@ These settings are hard-coded in the pipeline and cannot be changed via command-
 
 | Behavior | Source | Reason |
 |----------|--------|--------|
-| `clusterhmmer` always enabled | `main.nf` | Ensures consistent domain annotation across all analyses |
-| `tigrfam` always enabled | `main.nf` | Required for reliable BGC gene family classification |
+| Phosphonate detection only | `modules/analysis/antismash.nf` | Hardcoded to `--hmmdetection-limit-to-rule-names phosphonate` |
+| `--cb-knownclusters` always enabled | `modules/analysis/antismash.nf` | Always compare against MIBiG |
+| `clusterhmmer` always enabled | `modules/analysis/antismash.nf` | Ensures consistent domain annotation across all analyses |
+| `tigrfam` always enabled | `modules/analysis/antismash.nf` | Required for reliable BGC gene family classification |
 
 ### Resource Labels (`conf/labels.config`)
 
@@ -143,7 +134,7 @@ Process resource allocations are controlled by labels. These apply to all proces
 | `process_local` | 1 | 1 GB | — | Download/setup steps (runs on head node) |
 | `process_low` | 1 | 2 GB | 1h | Python scripts, tabulation, visualization |
 | `process_medium` | 4 | 8 GB | 2h | antiSMASH (per-genome BGC detection) |
-| `process_high` | 8 | 32 GB | 8h | BiG-SCAPE, BiG-SLiCE clustering |
+| `process_high` | 8 | 32 GB | 8h | BiG-SCAPE clustering |
 | `process_high_memory` | 8 | 48 GB* | 24h | GTDB-Tk pplacer |
 
 *The SLURM profile overrides `process_high_memory` to 128 GB.
@@ -193,16 +184,10 @@ Environment definitions are in `conf/conda.config`.
 # Minimal run (just BGC detection, no clustering or phylogeny)
 nextflow run main.nf --taxon "Pantoea" --clustering none --run_gtdbtk false
 
-# Full run with both clustering tools and MIBiG
+# Full run with clustering and MIBiG
 nextflow run main.nf --taxon "Streptomyces" \
-  --clustering both \
   --bigscape_mibig_version "3.1" \
   --bigscape_cutoffs "0.30,0.40"
-
-# Fast antiSMASH (minimal mode, specific BGC types only)
-nextflow run main.nf --taxon "Pantoea" \
-  --antismash_minimal true \
-  --hmmdetection_rules "terpene,nrps,t1pks"
 
 # Resume a previous run
 nextflow run main.nf -resume

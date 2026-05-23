@@ -1,6 +1,6 @@
 """Visualization modules for BGC analysis pipeline."""
 
-from .charts import get_bgc_color, plot_bgc_donut_chart, plot_kcb_identification_chart
+from .charts import get_bgc_color, plot_kcb_identification_chart
 from .tree_viz import (
     parse_newick,
     collect_phylo_leaves,
@@ -19,7 +19,6 @@ from .tables import (
     create_bgc_distribution_table
 )
 from .clustering import (
-    generate_bigslice_stats_html,
     generate_bigscape_stats_html,
     generate_gcf_visualization_html
 )
@@ -33,7 +32,6 @@ from .resources import (
 __all__ = [
     # charts
     'get_bgc_color',
-    'plot_bgc_donut_chart',
     'plot_kcb_identification_chart',
     # tree_viz
     'parse_newick',
@@ -51,7 +49,6 @@ __all__ = [
     'calculate_summary_statistics',
     'create_bgc_distribution_table',
     # clustering
-    'generate_bigslice_stats_html',
     'generate_bigscape_stats_html',
     'generate_gcf_visualization_html',
     # taxonomy

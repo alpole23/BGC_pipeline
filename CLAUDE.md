@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Nextflow pipeline for analyzing biosynthetic gene clusters (BGCs) in bacterial genomes using antiSMASH with optional BiG-SCAPE/BiG-SLiCE clustering and GTDB-Tk phylogenetic analysis.
+Nextflow pipeline for analyzing phosphonate biosynthetic gene clusters (BGCs) in bacterial genomes using antiSMASH with optional BiG-SCAPE clustering and GTDB-Tk phylogenetic analysis.
 
 ## Environment Setup
 
@@ -51,7 +51,7 @@ This is more efficient than re-running GTDB-Tk, especially since the classify st
 
 ### Clustering
 
-BiG-SCAPE and BiG-SLiCE always run fresh for the current genome set, as clustering depends on the complete set of BGCs being analyzed together.
+BiG-SCAPE always runs fresh for the current genome set, as clustering depends on the complete set of BGCs being analyzed together.
 
 ### When to Use
 
@@ -87,13 +87,11 @@ BGC detection using antiSMASH.
 | `input_genomes` | null | Path to pre-downloaded genomes (for `bgc_analysis` workflow) |
 | `reuse_antismash_from` | null | Taxon name to reuse antiSMASH results from |
 | `antismash_minimal` | false | Minimal mode (faster, skips domain analysis) |
-| `hmmdetection_rules` | "" | Limit detection to specific types (e.g., "terpene,nrps") |
-| `antismash_cb_knownclusters` | true | KnownClusterBlast: Compare vs MIBiG |
 | `antismash_cb_general` | false | ClusterBlast: Compare vs antiSMASH DB |
 | `antismash_cc_mibig` | false | ClusterCompare: Advanced MIBiG scoring |
 | `antismash_smcog_trees` | false | Phylogenetic trees for BGC genes |
 
-**Note:** `--clusterhmmer` and `--tigrfam` are always enabled for consistent domain analysis.
+**Note:** Detection is hardcoded to phosphonate rule only (`--hmmdetection-limit-to-rule-names phosphonate`). `--cb-knownclusters`, `--clusterhmmer`, and `--tigrfam` are always enabled.
 
 ### Region Analysis
 
@@ -111,9 +109,9 @@ Gene Cluster Family (GCF) clustering.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `clustering` | "bigscape" | `none`, `bigscape`, `bigslice`, or `both` |
+| `clustering` | "bigscape" | `none` or `bigscape` |
 
-**BiG-SCAPE Options** (when `clustering = "bigscape"` or `"both"`):
+**BiG-SCAPE Options** (when `clustering = "bigscape"`):
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -123,14 +121,6 @@ Gene Cluster Family (GCF) clustering.
 | `bigscape_classify` | "category" | `""`, `category`, `class`, or `legacy` |
 | `bigscape_include_singletons` | true | Include unclustered BGCs |
 | `bigscape_mix` | false | Allow mixing BGC classes in same GCF |
-
-**BiG-SLiCE Options** (when `clustering = "bigslice"` or `"both"`):
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `bigslice_threshold` | "300" | Distance threshold (lower = stricter) |
-| `bigslice_query_mode` | false | Query mode vs clustering mode |
-| `bigslice_query_db` | "" | Path to existing database (for query mode) |
 
 ### PHYLOGENY
 
@@ -169,7 +159,16 @@ results/
     ├── region_counts.tsv        # BGC counts per genome
     ├── region_tabulation.tsv    # Detailed BGC information
     ├── taxonomy_map.json        # Genome taxonomy mapping
-    └── main_data_visualization/ # Interactive HTML report
+    ├── bgc_report.html          # Interactive HTML report
+    ├── genomes/                 # Per-genome HTML pages
+    ├── kcb_identification_chart.png
+    ├── rarefaction_curve.png
+    └── gcf_heatmap/             # GCF biosynthetic tree and heatmap outputs
+        ├── gcf_biosynthetic_tree.png
+        ├── gcf_biosynthetic_tree.svg
+        ├── gcf_species_heatmap.png
+        ├── gcf_species_heatmap.svg
+        └── phosphonate_metadata.json
 ```
 
 ## SLURM HPC Execution
@@ -214,7 +213,7 @@ Benchmark the pipeline to estimate runtime for large-scale analyses (e.g., 3 mil
 1. **Pre-download databases** (one-time cost, not included in benchmark):
    ```bash
    # Databases are cached in results/databases/
-   # antiSMASH (~50GB), GTDB-Tk (~140GB), Pfam, TaxonKit, BiG-SLiCE models
+   # antiSMASH (~50GB), GTDB-Tk (~140GB), Pfam, TaxonKit
    ```
 
 2. **Run benchmark with trace enabled** (already configured in nextflow.config):
@@ -267,7 +266,7 @@ modules/
 ├── databases/          # Database download processes (antiSMASH, GTDB-Tk, Pfam, etc.)
 ├── genome/             # Genome processing (NCBI download, rename, GenBank→FASTA)
 ├── analysis/           # BGC analysis (antiSMASH, counting, tabulation, reuse)
-├── clustering/         # BiG-SCAPE/BiG-SLiCE clustering and stats extraction
+├── clustering/         # BiG-SCAPE clustering and stats extraction
 ├── phylogeny/          # GTDB-Tk classification (with reuse support)
 ├── visualization/      # HTML report generation
 └── utilities/          # Version collection
@@ -278,10 +277,10 @@ scripts/
 │   ├── parsers.py        # Duration, memory, timestamp parsing
 │   └── antismash_parser.py  # antiSMASH JSON parsing
 ├── viz/                # Visualization modules
-│   ├── charts.py         # Donut charts, KCB pie charts
+│   ├── charts.py         # KCB pie charts, BGC color utilities
 │   ├── tree_viz.py       # Phylogenetic/taxonomy tree visualization
 │   ├── tables.py         # Genome tables, statistics
-│   ├── clustering.py     # BiG-SCAPE/BiG-SLiCE stats HTML
+│   ├── clustering.py     # BiG-SCAPE stats HTML
 │   ├── taxonomy.py       # Interactive taxonomy tree
 │   └── resources.py      # Resource usage visualization
 ├── taxonomy/           # Taxonomy processing scripts
@@ -319,7 +318,6 @@ workflow (entry point)
     │
     ├── CLUSTERING            # GCF clustering
     │   ├── BIGSCAPE
-    │   ├── BIGSLICE
     │   ├── EXTRACT_CLUSTERING_STATS
     │   └── EXTRACT_GCF_REPRESENTATIVES
     │
@@ -328,7 +326,8 @@ workflow (entry point)
     │   ├── GTDBTK_CLASSIFY
     │   └── FILTER_GTDBTK_RESULTS
     │
-    └── VISUALIZE_RESULTS     # HTML report generation
+    ├── GCF_BIOSYNTHETIC_TREE # GCF biosynthetic NJ tree (when bigscape enabled, runs before visualization)
+    └── VISUALIZE_RESULTS     # HTML report generation (receives GCF tree PNG as input)
 ```
 
 **Invoking subworkflows directly:**
@@ -350,7 +349,7 @@ Processes use labels for resource allocation and error handling:
 | `process_local` | 1 | 1 GB | Runs on head node |
 | `process_low` | 1 | 2 GB | Light scripts |
 | `process_medium` | 4 | 8 GB | antiSMASH, visualization |
-| `process_high` | 8 | 32 GB | BiG-SCAPE, BiG-SLiCE |
+| `process_high` | 8 | 32 GB | BiG-SCAPE |
 | `process_high_memory` | 8 | 128 GB | GTDB-Tk pplacer |
 
 Error handling labels:
@@ -365,7 +364,6 @@ Versions are dynamically collected from installed tools. Most use `--version` fl
 |------|------------|---------|
 | antiSMASH | bioconda::antismash | BGC detection |
 | BiG-SCAPE | bioconda::bigscape | GCF clustering |
-| BiG-SLiCE | bigslice conda env | Alternative clustering |
 | GTDB-Tk | bioconda::gtdbtk | Phylogenetic placement |
 | TaxonKit | bioconda::taxonkit | Taxonomy processing |
 
@@ -376,14 +374,13 @@ Version information is output to `results/pipeline_info/software_versions.json`.
 The interactive HTML report (`bgc_report.html`) includes:
 
 ### Tabs
-- **Overview**: Summary statistics, BGC donut chart, rarefaction curve
-- **Taxonomy**: Interactive taxonomy tree with BGC counts
-- **BGC Distribution**: GCF × Taxonomy heatmap and distribution analysis
+The report uses 6 tabs:
+- **Overview**: Summary statistics grid, rarefaction curve, pipeline resource usage (collapsible) and software versions
+- **Phylogeny**: NCBI taxonomy tree + GTDB-Tk phylogenetic tree and BGC distribution
 - **Genomes**: Searchable genome table with links to individual genome pages
-- **Clustering**: BiG-SCAPE/BiG-SLiCE statistics, GCF visualization
+- **GCF Analysis**: GCF biosynthetic NJ tree (embedded as base64), coupling enzyme table, BiG-SCAPE clustering statistics and GCF visualization
 - **Novel BGCs**: BGC regions without KnownClusterBlast matches
 - **KCB Hits**: Known cluster matches grouped by MIBiG entry
-- **Resources**: Pipeline resource usage from trace data
 
 ### Rarefaction Curve
 - Shows GCF discovery saturation across sampled genomes
@@ -395,9 +392,15 @@ The interactive HTML report (`bgc_report.html`) includes:
 - Shows representative BGCs for each Gene Cluster Family
 - Includes gene arrows with functional annotations
 - Color-coded by gene function (core biosynthetic, transport, regulatory, etc.)
-- Links to antiSMASH results for detailed analysis
+- Links to antiSMASH results for detailed analysis (paths relative to `main_analysis_results/{taxon}/`)
 - Displays KCB hit or "Potentially Novel" designation for each GCF representative
 - Novel BGCs tab shows GCF family assignment when clustering is enabled
+
+### GCF Biosynthetic Tree
+- `GCF_BIOSYNTHETIC_TREE` runs **before** `VISUALIZE_RESULTS` — its PNG output is passed as `gcf_tree_png` input to create an explicit Nextflow data dependency
+- The tree PNG is embedded as base64 in `bgc_report.html`, making the report self-contained
+- Published copies also exist in `gcf_heatmap/` for standalone use
+- `conf/conda.config` uses `withName: 'GCF_BIOSYNTHETIC_TREE'` for the conda environment
 
 ### BGC Distribution Analysis
 - GCF × Genus heatmap showing BGC distribution across taxonomic groups
@@ -405,6 +408,162 @@ The interactive HTML report (`bgc_report.html`) includes:
 - Widespread GCFs table (found in 5+ genera, conserved or HGT)
 - Uses GTDB-Tk taxonomy when available, falls back to NCBI taxonomy
 - Phylogenetic tree files available in `results/gtdbtk_results/` for external viewers (iTOL, FigTree)
+
+## Post-Pipeline BGC Analysis Scripts
+
+These standalone scripts (in `scripts/`) perform additional analyses after the main pipeline completes. They operate on the BiG-SCAPE SQLite database and antiSMASH outputs.
+
+### `scripts/bgc_pfam_tree.py` — Jaccard-distance NJ tree of BGCs
+
+Builds a Neighbor-Joining tree based on Pfam domain presence/absence (Jaccard distance).
+
+```bash
+python scripts/bgc_pfam_tree.py \
+    --db results/bigscape_results/Pantoea/Pantoea.db \
+    --bgc_type phosphonate \
+    --outdir results/bgc_trees/Pantoea
+    [--family_id 2]    # Optional: restrict to a single GCF
+```
+
+Outputs: `_pfam_tree.nwk`, `_jaccard_distances.tsv`, `_domain_matrix.tsv`, `_metadata.json`
+
+### `scripts/bgc_synteny_tree.py` — LCS-based gene-order tree
+
+Builds a tree based on ordered domain sequences (one domain per CDS, sorted by genomic position). Uses normalized LCS distance. **Note:** Can be confused by strand orientation.
+
+```bash
+python scripts/bgc_synteny_tree.py \
+    --db results/bigscape_results/Pantoea/Pantoea.db \
+    --bgc_type phosphonate \
+    --outdir results/bgc_trees/Pantoea/GCF2_synteny \
+    [--family_id 2]
+```
+
+Outputs: `_synteny_tree.nwk`, `_domain_sequences.tsv`, `_lcs_distances.tsv`, `_metadata.json`
+
+### `scripts/bgc_architecture_tree.py` — Architecture deduplication tree
+
+Groups BGCs by exact domain multiset (orientation-independent), then builds a generalized Jaccard NJ tree of the unique architectures. Best for within-GCF comparison.
+
+```bash
+python scripts/bgc_architecture_tree.py \
+    --db results/bigscape_results/Pantoea/Pantoea.db \
+    --bgc_type phosphonate \
+    --family_id 2 \
+    --outdir results/bgc_trees/Pantoea/GCF2_arch
+```
+
+Outputs: NJ tree + five iTOL annotation files (count bar, domain binary, genus colorstrip, arch label, genome list).
+
+Architecture labels: `arch_001_n138` (arch rank, count). GCF2 phosphonate → 205 BGCs → 21 unique architectures; arch_001 (n=138) is the dominant core.
+
+### `scripts/bgc_coupling_annotation.py` — iTOL coupling enzyme colorstrip
+
+Classifies each phosphonate BGC by the coupling enzyme acting on phosphonopyruvate (the branching step immediately downstream of PEP mutase). Reads antiSMASH JSON files for rich SMCOG and rule-based-cluster annotations, then outputs an iTOL DATASET_COLORSTRIP file.
+
+```bash
+python scripts/bgc_coupling_annotation.py \
+    --antismash_dir results/antismash_results/Pantoea \
+    --metadata results/bgc_trees/Pantoea/phosphonate_metadata.json \
+    --outfile results/bgc_trees/Pantoea/phosphonate_itol_coupling.txt \
+    --bgc_type phosphonate
+```
+
+**Coupling enzyme classes detected (Pantoea, n=1212 BGCs):**
+
+| Class | Marker | Pathway | GCF | Count |
+|-------|--------|---------|-----|-------|
+| FrbC | SMCOG1271 (HMGL-like) | → phosphonomethylmalate → phosphinothricin-type | GCF-2/3 | 920 |
+| Fe-ADH | Fe-ADH rule | → phosphonolactate (reductase route) | GCF-4/6 | 112 |
+| TPP+NTP | TPP_enzyme_C + NTP_transf_3 rules | → phosphonolipid (CDP-pathway) | GCF-5 | 84 |
+| Ppd | SMCOG1055 (ThDP-decarboxylase) | → 2-phosphonoacetaldehyde → 2-AEP | GCF-1/8 | 72 |
+| PalB* | SMCOG1013 | → phosphonoalanine? | GCF-7 | 20 |
+| Unknown | — | — | — | 4 |
+
+**Key insights:**
+- Classification maps almost perfectly onto BiG-SCAPE GCF families — coupling enzyme type is the primary determinant of GCF membership.
+- The `Fe-ADH` rule-based marker (iron-containing alcohol dehydrogenase / 2-Hacid_dh_C) is antiSMASH's marker for the phosphonopyruvate reductase (→ phosphonolactate) pathway.
+- GCF-5 (TPP+NTP) confirmed as **phosphonolipid BGCs**: Ppd-type ThDP enzyme + two NTP_transf_3 cytidylyltransferases + CDP-alcohol phosphatidyltransferases + Asn_synthase (CDP-phosphonate pathway). Well-annotated NCBI genomes explicitly label the ThDP enzyme as "phosphonopyruvate decarboxylase".
+- AEP-pathway BGCs (GCF-1/8) use Ppd as coupling enzyme regardless of tailoring enzymes downstream.
+
+**⚠️ PalB classification is pending correction:** The current script uses SMCOG1013 (Aminotran_3, fold type IV PLP) to detect PalB. However, PalB is an **AAT superfamily enzyme (fold type I PLP)** annotated as Aminotran_1_2 / PF00155 / SMCOG1019 — a completely different aminotransferase class. Additionally, coupling enzymes are not always adjacent to pepM in the BGC (the phosphonoalamide BGC architecture shows PalB far from pepM). The correct approach is protein sequence phylogenetic placement against characterized references (see "Coupling Enzyme Reference Trees" below).
+
+**Note on PalA:** PalA (phosphonopyruvate hydrolase, a phosphonate degradation/resistance gene) does not confound the classification — all GCF types show clear biosynthetic markers.
+
+### Coupling Enzyme Reference Trees
+
+Protein sequence phylogenetic trees for each coupling enzyme class, with characterized MIBiG/literature reference sequences as anchors to place Pantoea BGC sequences.
+
+**Reference sequences:** `results/bgc_trees/Pantoea/coupling_enzyme_trees/reference_coupling_enzymes.faa`
+
+Seven characterized coupling enzymes covering all four reaction types:
+
+| FASTA ID | Protein | Function | Source |
+|----------|---------|----------|--------|
+| `BGC0000904\|ABB90392\|FrbC` | FrbC | phosphonomethylmalate synthase | *Streptomyces rubellomurinus* (FR-900098) |
+| `BGC0000897\|ACZ13457\|DhpF` | DhpF | phosphonopyruvate decarboxylase | *Streptomyces luridus* (Dehydrophos) |
+| `BGC0000938\|ACG70832\|Fom2` | Fom2 | phosphonopyruvate decarboxylase | *Streptomyces fradiae* (Fosfomycin) |
+| `BGC0000806\|AHL24480\|Ppd` | Ppd | phosphonopyruvate decarboxylase | *Glycomyces* sp. NRRL B-16210 |
+| `Phosphonoalamide_BGC\|WP_051781701\|PnaA` | PnaA | phosphonopyruvate transaminase | *Streptomyces* sp. NRRL B-2790 |
+| `Valinophos_BGC\|WP_063765859\|VlpB` | VlpB | phosphonopyruvate reductase | *Streptomyces durhamensis* NRRL B-3309 |
+| `Pantaphos_BGC\|WP_013027159\|HvrC` | HvrC | phosphonomethylmalate synthase | *Pantoea ananatis* LMG 5342 |
+
+**Plan (pending):** Extract coupling enzyme CDS sequences from Pantoea antiSMASH JSONs for each class, align with references using MAFFT/MUSCLE, build ML or NJ trees (FastTree/IQ-TREE), and use phylogenetic placement to:
+1. Correctly classify GCF-7 (currently mislabeled "PalB" via SMCOG1013)
+2. Confirm or reclassify the 4 "Unknown" BGCs
+3. Identify true PalB-type (AAT superfamily, fold type I PLP) transaminase coupling enzymes in Pantoea
+
+### `scripts/bgc_gcf_heatmap.py` — GCF × Species presence/absence heatmap
+
+Generates a heatmap of GCF membership across organism groups, with a GTDB-Tk phylogenetic tree as column ordering and a Jaccard/complete-linkage row dendrogram matching BiG-SCAPE's clustering algorithm.
+
+```bash
+python scripts/bgc_gcf_heatmap.py \
+    --metadata            results/bgc_trees/Pantoea/phosphonate_metadata.json \
+    --coupling_annotation results/bgc_trees/Pantoea/phosphonate_itol_coupling.txt \
+    --gtdbtk_tree         results/gtdbtk_results/Pantoea/gtdbtk_output/classify/gtdbtk.bac120.classify.tree.1.tree \
+    --gtdbtk_summary      results/gtdbtk_results/Pantoea/gtdbtk_output/gtdbtk.bac120.summary.tsv \
+    --outdir              results/bgc_trees/Pantoea
+```
+
+- **Data source**: Only region-level BGC records with GCF assignments at `cutoff=0.3` (303 phosphonate BGCs; sub-records like cand_cluster/protocluster are excluded)
+- **True singletons**: Single-member GCFs (size=1), not unassigned records
+- **Row dendrogram**: `scipy.spatial.distance.pdist(metric='jaccard')` + `linkage(method='complete')` — matches BiG-SCAPE's clustering algorithm
+- **Column tree**: GTDB-Tk phylogenetic tree pruned to representative genomes per organism group, rendered as a cladogram
+- **Outputs**: `gcf_species_heatmap.png` and `.svg`
+
+### `scripts/bgc_itol_annotations.py` — iTOL annotation files
+
+Generates iTOL annotation files from bgc_pfam_tree.py or bgc_synteny_tree.py outputs.
+
+```bash
+python scripts/bgc_itol_annotations.py \
+    --treedir results/bgc_trees/Pantoea \
+    --bgc_type phosphonate
+```
+
+Outputs: `_itol_gcf.txt` (color strip), `_itol_domains.txt` (binary), `_itol_domaincount.txt` (bar chart).
+
+### Key Pfam accessions for phosphonate BGCs
+
+Verified from antiSMASH clusterhmmer output on Pantoea phosphonate clusters:
+
+| Pfam | Name | Function |
+|------|------|----------|
+| PF13714 | PEP_mutase | PEP mutase (pepM/aepX) — hallmark gene |
+| PF00296 | HMGL-like (HEPD) | 2-hydroxyethylphosphonate dioxygenase |
+| PF00682 | FrbC-like (PmmS) | Phosphonomethylmalate synthase (HMGL superfamily) |
+| PF02775 | ThDP_C | Phosphonopyruvate decarboxylase |
+| PF00266 | Aminotrans_V | 2-AEP transaminase |
+| PF13649 | Radical_SAM | Radical C–P chemistry |
+
+**Note on HMGL annotation:** AntiSMASH/BiG-SCAPE annotates phosphonomethylmalate synthase as `PF00682 (HMGL-like)` because it structurally belongs to the HMGL superfamily. The antiSMASH JSON provides richer context via `gene_functions: biosynthetic-additional (smcogs) SMCOG1271: 2-isopropylmalate synthase` and `sec_met_domain: HMGL-like`. BiG-SCAPE only stores the Pfam accession and bit score — no SMCOG or functional description.
+
+### Data Sources
+
+- BiG-SCAPE DB `hsp` table: Pfam accession + bit_score per CDS (populated by antiSMASH clusterhmmer)
+- AntiSMASH JSON: richer annotations including `gene_functions`, `sec_met_domain` (SMCOG hits, TIGRFAM), and `product`
+- Domain sequences in TSV come from the BiG-SCAPE DB (best Pfam hit per CDS, ordered by `nt_start`)
 
 ## Development Notes
 
@@ -444,6 +603,14 @@ Key files:
 - `scripts/clustering/extract_gcf_representatives.py`: `load_kcb_lookup()`, `build_record_index_map()`, `extract_genome_gcf_mapping()`
 - `scripts/analysis/tabulate_regions.py`: Creates `region_name` column in tabulation
 
+### antiSMASH Link Paths
+
+Links from `bgc_report.html` to antiSMASH results use paths relative to `main_analysis_results/{taxon}/`:
+```
+../../antismash_results/{taxon}/{genome}/index.html#r{record_index}c{region_number}
+```
+This is set in `scripts/clustering/extract_gcf_representatives.py` (`antismash_link`). If the report location changes, this depth must be updated accordingly.
+
 ### Known Issues
 
 - **Duplicate gene names**: Some NCBI genomes have duplicate CDS feature names (e.g., `sapC`), causing antiSMASH to fail with "multiple CDS features have the same name"
@@ -461,7 +628,6 @@ du -sh work/                      # Check work dir size
 ```
 
 - **GTDB-Tk OOM**: Requires 56-64GB RAM; keep `--pplacer_cpus 1`
-- **BiG-SLiCE stats hang**: Query SQLite directly instead of web UI
 - **Conda env conflicts**: Each tool has its own environment; don't mix in COLLECT_VERSIONS
 - **NCBI download corruption**: If GENBANK_TO_FASTA fails with "No sequences found", check for null-filled files:
   ```bash

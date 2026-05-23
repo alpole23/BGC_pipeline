@@ -26,7 +26,6 @@ main.nf
     │
     ├── CLUSTERING (subworkflow)
     │   ├── BIGSCAPE
-    │   ├── BIGSLICE
     │   ├── EXTRACT_CLUSTERING_STATS
     │   └── EXTRACT_GCF_REPRESENTATIVES
     │
@@ -37,6 +36,7 @@ main.nf
     │   └── FILTER_GTDBTK_RESULTS
     │
     ├── VISUALIZE_RESULTS
+    ├── GCF_BIOSYNTHETIC_TREE
     └── COLLECT_VERSIONS
 ```
 
@@ -86,17 +86,6 @@ Downloads NCBI TaxDump for taxonomy processing.
 |----------|-------|
 | Label | `process_low`, `retry_on_error` |
 | Output | `taxdump_dir` - NCBI taxonomy database |
-| Cache | `storeDir` |
-
-### DOWNLOAD_BIGSLICE_MODELS
-**Location:** `modules/databases/download_bigslice_models.nf`
-
-Downloads BiG-SLiCE machine learning models.
-
-| Property | Value |
-|----------|-------|
-| Label | `process_low`, `retry_on_error` |
-| Output | `models_dir` - BiG-SLiCE models |
 | Cache | `storeDir` |
 
 ---
@@ -183,8 +172,8 @@ Runs antiSMASH BGC detection on a genome.
 | Output | `result_dir` - antiSMASH output directory |
 
 **Features:**
-- Configurable analyses: KnownClusterBlast, ClusterBlast, ClusterCompare
-- Always enables clusterhmmer and tigrfam for domain analysis
+- Hardcoded phosphonate-only detection (`--hmmdetection-limit-to-rule-names phosphonate`)
+- Always enables KnownClusterBlast, clusterhmmer, and tigrfam for domain analysis
 - Writes `.antismash_meta` file for version/params tracking
 - Skips genomes that already have results in publishDir
 
@@ -289,26 +278,10 @@ Runs BiG-SCAPE network-based BGC clustering.
 - Alignment modes: auto, global, glocal
 - Generates SQLite database for downstream analysis
 
-### BIGSLICE
-**Location:** `modules/clustering/bigslice.nf`
-
-Runs BiG-SLiCE ML-based BGC clustering.
-
-| Property | Value |
-|----------|-------|
-| Label | `process_high` |
-| Input | antiSMASH results, BiG-SLiCE models |
-| Output | `bigslice_dir` |
-
-**Features:**
-- Configurable distance threshold
-- Supports query mode against existing databases
-- Integrates taxonomy information
-
 ### EXTRACT_CLUSTERING_STATS
 **Location:** `modules/clustering/extract_clustering_stats.nf`
 
-Extracts statistics from BiG-SCAPE or BiG-SLiCE results.
+Extracts statistics from BiG-SCAPE results.
 
 | Property | Value |
 |----------|-------|
@@ -398,14 +371,33 @@ Generates the interactive HTML report.
 | Output | `bgc_report.html`, individual genome pages |
 
 **Report sections:**
-- Overview: BGC statistics, donut chart, rarefaction curve
+- Overview: BGC statistics (condensed single grid), side-by-side donut charts
 - Taxonomy: Interactive taxonomy tree with BGC counts
-- BGC Distribution: GCF × taxonomy heatmap
 - Genomes: Searchable genome table
-- Clustering: GCF visualization with gene diagrams
+- BGC Distribution: GCF × taxonomy heatmap
+- Clustering: GCF visualization with gene diagrams (BiG-SCAPE description at bottom)
 - Novel BGCs: Potentially novel clusters
 - KCB Hits: Known cluster matches
-- Resources: Pipeline timing and resource usage
+- Pipeline Resources: Pipeline timing and resource usage
+
+### GCF_BIOSYNTHETIC_TREE
+**Location:** `modules/visualization/gcf_biosynthetic_tree.nf`
+
+Generates a GCF biosynthetic NJ tree and supporting figures for phosphonate BGCs. Runs four scripts in sequence: metadata extraction, coupling enzyme classification, GCF × species heatmap, and GCF biosynthetic tree.
+
+| Property | Value |
+|----------|-------|
+| Label | `process_medium` |
+| Input | `bigscape_db` (SQLite), `antismash_results` (collected dirs), `gtdbtk_tree` (optional), `gtdbtk_summary` (optional) |
+| Output | `gcf_biosynthetic_tree.png`, `gcf_biosynthetic_tree.svg`, `gcf_species_heatmap.png`, `gcf_species_heatmap.svg`, `phosphonate_metadata.json` |
+
+**Steps:**
+1. `bgc_pfam_tree.py` — extracts Pfam domain metadata per BGC from BiG-SCAPE DB
+2. `bgc_coupling_annotation.py` — classifies each BGC by coupling enzyme class
+3. `bgc_gcf_heatmap.py` — renders GCF × species heatmap with optional GTDB-Tk column tree
+4. `bgc_gcf_tree.py` — builds NJ tree from BiG-SCAPE center-to-center distances and renders figure
+
+**Triggered when:** `params.clustering == "bigscape"` and `params.run_analysis == true`
 
 ### COLLECT_VERSIONS
 **Location:** `modules/utilities/collect_versions.nf`

@@ -70,22 +70,6 @@ process COLLECT_VERSIONS {
     else:
         versions["bigscape"] = "not used"
 
-    # BiG-SLiCE - check named env first, then work conda
-    bigslice_version = "not used"
-    try:
-        result = subprocess.run(
-            ["conda", "run", "-n", "bigslice", "bigslice", "--version"],
-            capture_output=True, text=True, timeout=30
-        )
-        match = re.search(r"version\\s+([\\d.]+)", result.stdout + result.stderr)
-        if match:
-            bigslice_version = match.group(1)
-    except:
-        bigslice_bin = find_executable("bigslice", work_conda)
-        if bigslice_bin:
-            bigslice_version = get_version(bigslice_bin, r"version\\s+([\\d.]+)")
-    versions["bigslice"] = bigslice_version
-
     # GTDB-Tk - check if it was run (gtdbtk_done is not a placeholder)
     gtdbtk_ran = os.path.isdir("${gtdbtk_done}") or (os.path.isfile("${gtdbtk_done}") and "NO_GTDBTK" not in "${gtdbtk_done}")
     gtdbtk_bin = find_executable("gtdbtk", work_conda)

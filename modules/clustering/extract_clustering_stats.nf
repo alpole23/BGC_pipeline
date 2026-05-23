@@ -1,22 +1,20 @@
 /**
- * Extract statistics from clustering tool output (BiG-SCAPE or BiG-SLiCE).
- * This is a parameterized process that handles both tools.
+ * Extract statistics from BiG-SCAPE clustering output.
  */
 process EXTRACT_CLUSTERING_STATS {
-    tag "$taxon - $tool"
+    tag "$taxon"
     label 'process_low'
-    publishDir "${params.outdir}/${tool}_results/${Utils.sanitizeTaxon(taxon)}", mode: 'copy'
+    publishDir "${params.outdir}/bigscape_results/${Utils.sanitizeTaxon(params.taxon)}", mode: 'copy'
 
     input:
     val taxon
-    val tool       // "bigscape" or "bigslice"
     path input_dir
 
     output:
-    path "${tool}_statistics.json", emit: stats_json
+    path "bigscape_statistics.json", emit: stats_json
 
     script:
     """
-    python ${projectDir}/scripts/clustering/extract_${tool}_stats.py ${input_dir} ${tool}_statistics.json
+    python ${projectDir}/scripts/clustering/extract_bigscape_stats.py ${input_dir} bigscape_statistics.json
     """
 }

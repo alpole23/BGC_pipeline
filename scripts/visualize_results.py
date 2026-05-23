@@ -12,7 +12,7 @@ Includes:
 - BGC histogram showing distribution across genomes
 - Searchable genome table
 - Individual genome metadata pages
-- Clustering statistics (BiG-SCAPE and BiG-SLiCE)
+- Clustering statistics (BiG-SCAPE)
 """
 
 import argparse
@@ -220,7 +220,7 @@ def create_genome_metadata_pages(counts_file, assembly_info, name_map, outdir, t
     taxon_clean = re.sub(r'_+', '_', taxon_clean).strip('_')
 
     # Read counts to get genome list
-    counts_df = pd.read_csv(counts_file, sep='\t', comment='#')
+    counts_df = pd.read_csv(counts_file, sep='\t', skiprows=lambda i: i == 0)
 
     # Read assembly info
     assembly_df = pd.read_csv(assembly_info, sep='\t')
@@ -371,7 +371,7 @@ def create_genome_metadata_pages(counts_file, assembly_info, name_map, outdir, t
     {kcb_section}
 
     <div class="button-container">
-        <a href="../../../../antismash_results/{taxon_clean}/{genome_name}/index.html" class="antismash-link" target="_blank">View antiSMASH Results</a>
+        <a href="../../../antismash_results/{taxon_clean}/{genome_name}/index.html" class="antismash-link" target="_blank">View antiSMASH Results</a>
         <a href="../bgc_report.html" class="back-link">← Back to Main Report</a>
     </div>
 </body>
@@ -389,7 +389,7 @@ def generate_genome_table_html(counts_file, assembly_info, name_map, taxonomy_ma
     '''Generate HTML for a searchable genome table'''
 
     # Read counts to get genome list with BGC data
-    counts_df = pd.read_csv(counts_file, sep='\t', comment='#')
+    counts_df = pd.read_csv(counts_file, sep='\t', skiprows=lambda i: i == 0)
 
     # Read assembly info
     assembly_df = pd.read_csv(assembly_info, sep='\t')
@@ -409,6 +409,8 @@ def generate_genome_table_html(counts_file, assembly_info, name_map, taxonomy_ma
         genome_name = row['record'].replace('.gbff', '')
         assembly_id = reverse_map.get(genome_name, 'N/A')
         total_bgcs = row.get('total_count', 0)
+        if pd.isna(total_bgcs):
+            total_bgcs = 0
 
         # Get top BGC types for this genome
         bgc_counts = {col: row.get(col, 0) for col in bgc_cols if row.get(col, 0) > 0}
@@ -464,7 +466,7 @@ def generate_genome_table_html(counts_file, assembly_info, name_map, taxonomy_ma
 
 def calculate_summary_statistics(counts_file, tabulation_file=None):
     '''Calculate summary statistics for the dataset including tabulation stats'''
-    df = pd.read_csv(counts_file, sep='\t', comment='#')
+    df = pd.read_csv(counts_file, sep='\t', skiprows=lambda i: i == 0)
 
     # Select BGC columns
     numeric_cols = df.select_dtypes(include='number').columns
@@ -472,10 +474,12 @@ def calculate_summary_statistics(counts_file, tabulation_file=None):
 
     total_genomes = len(df)
     total_bgcs = df['total_count'].sum()
+    if pd.isna(total_bgcs):
+        total_bgcs = 0
     avg_bgcs = df['total_count'].mean()
     std_bgcs = df['total_count'].std()
-    min_bgcs = int(df['total_count'].min())
-    max_bgcs = int(df['total_count'].max())
+    min_bgcs = int(df['total_count'].min()) if not pd.isna(df['total_count'].min()) else 0
+    max_bgcs = int(df['total_count'].max()) if not pd.isna(df['total_count'].max()) else 0
     median_bgcs = df['total_count'].median()
     genomes_with_no_bgcs = len(df[df['total_count'] == 0])
     genomes_with_bgcs = total_genomes - genomes_with_no_bgcs
@@ -603,7 +607,7 @@ def calculate_summary_statistics(counts_file, tabulation_file=None):
 
 def create_bgc_distribution_table(counts_file, outdir):
     '''Create interactive HTML table for BGC distribution with clickable genome links and color-coding'''
-    df = pd.read_csv(counts_file, sep='\t', comment='#')
+    df = pd.read_csv(counts_file, sep='\t', skiprows=lambda i: i == 0)
 
     # Select BGC columns
     numeric_cols = df.select_dtypes(include='number').columns
@@ -639,8 +643,9 @@ def create_bgc_distribution_table(counts_file, outdir):
         row_html = f'<tr><td><a href="{genome_link}">{genome_name}</a></td>'
 
         # Total count with color
-        total_color = get_color(row["total_count"], max_total)
-        row_html += f'<td style="{total_color}">{int(row["total_count"])}</td>'
+        total_count = row["total_count"] if not pd.isna(row["total_count"]) else 0
+        total_color = get_color(total_count, max_total)
+        row_html += f'<td style="{total_color}">{int(total_count)}</td>'
 
         # Add BGC counts for each type with color coding
         for bgc_type in bgc_cols:
@@ -661,87 +666,6 @@ def create_bgc_distribution_table(counts_file, outdir):
     return header, '\n'.join(html_rows)
 
 
-def plot_bgc_donut_chart(counts_file, outdir):
-    '''Create horizontal bar chart showing overall BGC type distribution with consistent colors'''
-    df = pd.read_csv(counts_file, sep='\t', comment='#')
-
-    # Select BGC columns
-    numeric_cols = df.select_dtypes(include='number').columns
-    bgc_cols = [col for col in numeric_cols if col not in ['total_count']]
-
-    # Sum total counts for each BGC type
-    bgc_totals = df[bgc_cols].sum().sort_values(ascending=False)
-
-    # Filter out zero values
-    bgc_totals = bgc_totals[bgc_totals > 0]
-
-    if len(bgc_totals) == 0:
-        print("No BGC data for distribution chart")
-        return False
-
-    # Calculate percentages and filter out entries below 0.5% (would round to 0%)
-    total_bgcs = bgc_totals.sum()
-    bgc_percentages = (bgc_totals / total_bgcs * 100)
-
-    # Filter to only include entries with >= 0.5% (visible percentages)
-    significant_mask = bgc_percentages >= 0.5
-    bgc_totals_filtered = bgc_totals[significant_mask]
-    bgc_percentages_filtered = bgc_percentages[significant_mask]
-
-    # Track filtered entries for note
-    n_filtered = len(bgc_totals) - len(bgc_totals_filtered)
-    filtered_sum = bgc_totals[~significant_mask].sum() if n_filtered > 0 else 0
-
-    if len(bgc_totals_filtered) == 0:
-        print("No BGC data above 0.5% threshold for distribution chart")
-        return False
-
-    # Get colors for each BGC type
-    colors = [get_bgc_color(bgc_type) for bgc_type in bgc_totals_filtered.index]
-
-    # Create horizontal bar chart - wider figure for full-width display
-    n_types = len(bgc_totals_filtered)
-    fig_height = max(6, n_types * 0.4 + 2)  # Dynamic height based on number of types
-    fig, ax = plt.subplots(figsize=(14, fig_height), facecolor='white')
-    ax.set_facecolor('white')
-
-    # Create horizontal bars
-    y_pos = range(len(bgc_totals_filtered))
-    bars = ax.barh(y_pos, bgc_percentages_filtered.values, color=colors, edgecolor='white', linewidth=1)
-
-    # Add value labels on bars
-    for i, (bar, count, pct) in enumerate(zip(bars, bgc_totals_filtered.values, bgc_percentages_filtered.values)):
-        # Label inside bar if wide enough, otherwise outside
-        if pct > 5:
-            ax.text(bar.get_width() - 0.5, bar.get_y() + bar.get_height()/2,
-                   f'{int(count)} ({pct:.1f}%)', ha='right', va='center',
-                   fontsize=11, fontweight='bold', color='white')
-        else:
-            ax.text(bar.get_width() + 0.3, bar.get_y() + bar.get_height()/2,
-                   f'{int(count)} ({pct:.1f}%)', ha='left', va='center',
-                   fontsize=11, fontweight='bold', color='#333')
-
-    # Styling
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(bgc_totals_filtered.index, fontsize=12)
-    ax.set_xlabel('Percentage of Total BGCs', fontsize=12, fontweight='bold')
-    ax.set_xlim(0, max(bgc_percentages_filtered.values) * 1.15)  # Add space for labels
-    ax.invert_yaxis()  # Largest at top
-
-    # Add title with total count
-    title = f'BGC Type Distribution (n={int(total_bgcs)} total BGCs)'
-    if n_filtered > 0:
-        title += f'\n{n_filtered} types with <0.5% ({int(filtered_sum)} BGCs) not shown'
-    ax.set_title(title, fontsize=14, fontweight='bold', pad=10)
-
-    # Remove top and right spines
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-
-    plt.tight_layout()
-    plt.savefig(f'{outdir}/bgc_donut_chart.png', dpi=300, bbox_inches='tight', facecolor='white')
-    plt.close()
-    return True
 
 def plot_circular_taxonomy_tree(taxonomy_tree_data, counts_file, outdir):
     '''Create circular taxonomy tree with BGC annotation rings'''
@@ -755,7 +679,7 @@ def plot_circular_taxonomy_tree(taxonomy_tree_data, counts_file, outdir):
         return False
 
     # Read counts data to get BGC types
-    df = pd.read_csv(counts_file, sep='\t', comment='#')
+    df = pd.read_csv(counts_file, sep='\t', skiprows=lambda i: i == 0)
     numeric_cols = df.select_dtypes(include='number').columns
     bgc_cols = [col for col in numeric_cols if col not in ['total_count']]
 
@@ -1271,7 +1195,7 @@ def plot_circular_phylogenetic_tree(newick_file, counts_file, gtdbtk_summary, ou
     bgc_data = {}
     bgc_cols = []
     if counts_file and Path(counts_file).exists():
-        df = pd.read_csv(counts_file, sep='\t', comment='#')
+        df = pd.read_csv(counts_file, sep='\t', skiprows=lambda i: i == 0)
         numeric_cols = df.select_dtypes(include='number').columns
         bgc_cols = [col for col in numeric_cols if col not in ['total_count']]
 
@@ -1520,7 +1444,7 @@ def prepare_phylo_tree_for_js(newick_file, gtdbtk_summary, counts_file, outdir, 
     # Read BGC counts
     if counts_file and Path(counts_file).exists():
         try:
-            df = pd.read_csv(counts_file, sep='\t', comment='#')
+            df = pd.read_csv(counts_file, sep='\t', skiprows=lambda i: i == 0)
             for _, row in df.iterrows():
                 genome_name = row.get('genome', row.get('file', ''))
                 if genome_name:
@@ -1907,137 +1831,6 @@ def generate_rarefaction_curve(bigscape_db_path, outdir, taxon, n_iterations=50)
         return None
 
 
-def generate_bigslice_stats_html(bigslice_stats_file):
-    '''Generate HTML for BiG-SLiCE clustering statistics'''
-    import os
-
-    if not os.path.exists(bigslice_stats_file) or os.path.basename(bigslice_stats_file).startswith('NO_'):
-        return ''
-
-    try:
-        with open(bigslice_stats_file, 'r') as f:
-            stats = json.load(f)
-    except Exception as e:
-        print(f"Warning: Could not read BiG-SLiCE statistics: {e}")
-        return ''
-
-    if 'error' in stats:
-        return f'''
-    <h3>BiG-SLiCE Clustering Statistics</h3>
-    <div class="info-box" style="background-color: #fff3cd; border-left: 4px solid #ffc107;">
-        <p><strong>Note:</strong> {stats['error']}</p>
-    </div>
-    '''
-
-    # Generate fragmentation breakdown
-    frag_html = ''
-    if 'fragmentation' in stats:
-        frag_rows = []
-        for frag_type, frag_data in stats['fragmentation'].items():
-            frag_rows.append(f'''
-                <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">{frag_type.capitalize()}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{frag_data['count']}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{frag_data['avg_distance']}</td>
-                </tr>
-            ''')
-        frag_html = f'''
-            <tr>
-                <td colspan="3" style="padding: 12px 8px 4px 8px; font-weight: bold; color: #666;">Fragmentation Breakdown:</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 2px solid #999; font-weight: bold;">Type</td>
-                <td style="padding: 8px; border-bottom: 2px solid #999; font-weight: bold; text-align: right;">Count</td>
-                <td style="padding: 8px; border-bottom: 2px solid #999; font-weight: bold; text-align: right;">Avg Distance</td>
-            </tr>
-            {''.join(frag_rows)}
-        '''
-
-    # Generate GCF size distribution preview (top 5)
-    gcf_dist_html = ''
-    if 'gcf_distribution' in stats and stats['gcf_distribution']:
-        top_gcfs = stats['gcf_distribution'][:5]
-        gcf_rows = []
-        for gcf in top_gcfs:
-            gcf_rows.append(f'''
-                <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">GCF {gcf['gcf_id']}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{gcf['bgc_count']}</td>
-                </tr>
-            ''')
-        more_text = ''
-        if len(stats['gcf_distribution']) > 5:
-            more_text = f'''
-                <tr>
-                    <td colspan="2" style="padding: 8px; text-align: center; color: #666; font-style: italic;">
-                        ... and {len(stats['gcf_distribution']) - 5} more GCFs
-                    </td>
-                </tr>
-            '''
-        gcf_dist_html = f'''
-            <tr>
-                <td colspan="2" style="padding: 12px 8px 4px 8px; font-weight: bold; color: #666;">Top Gene Cluster Families:</td>
-            </tr>
-            {''.join(gcf_rows)}
-            {more_text}
-        '''
-
-    return f'''
-    <h3>BiG-SLiCE Clustering Statistics</h3>
-    <div class="info-box">
-        <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; font-weight: bold;">Total BGCs</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right; font-weight: bold;">{stats.get('total_bgcs', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; font-weight: bold;">Total GCFs</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right; font-weight: bold;">{stats.get('total_gcfs', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Distance Threshold (T)</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('threshold', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Avg. Distance to GCF</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('avg_distance_to_gcf', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">BGCs Assigned (d ≤ T)</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('bgcs_assigned', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">BGCs Not Assigned (d > T)</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('bgcs_not_assigned', 0)}</td>
-            </tr>
-            <tr>
-                <td colspan="2" style="padding: 12px 8px 4px 8px; font-weight: bold; color: #666;">GCF Size Statistics:</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Min BGCs per GCF</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('min_bgcs_per_gcf', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Avg BGCs per GCF</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('avg_bgcs_per_gcf', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Max BGCs per GCF</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('max_bgcs_per_gcf', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Singleton GCFs (n=1)</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('singleton_gcfs', 0)}</td>
-            </tr>
-            {frag_html}
-            {gcf_dist_html}
-        </table>
-        <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
-            <strong>Note:</strong> Statistics extracted from BiG-SLiCE database. For detailed analysis, use the BiG-SLiCE web interface or query the database directly.
-        </p>
-    </div>
-    '''
-
 def generate_bigscape_stats_html(bigscape_stats_file, mibig_included=False):
     '''Generate HTML for BiG-SCAPE clustering statistics'''
     import os
@@ -2170,11 +1963,18 @@ def build_gcf_taxonomy_distribution(gcf_data, taxonomy_map):
         return None
 
     # Build genome -> taxonomy lookup
+    # Try genome_name directly first (works for GTDB-Tk keyed by genome name),
+    # then fall back to assembly_id extraction (works for NCBI taxonomy map).
     genome_to_taxonomy = {}
     for genome_name in genome_gcf_mapping.keys():
-        assembly_id = extract_assembly_id_from_genome_name(genome_name)
-        if assembly_id and assembly_id in taxonomy_map:
-            tax_info = taxonomy_map[assembly_id]
+        tax_info = None
+        if genome_name in taxonomy_map:
+            tax_info = taxonomy_map[genome_name]
+        else:
+            assembly_id = extract_assembly_id_from_genome_name(genome_name)
+            if assembly_id and assembly_id in taxonomy_map:
+                tax_info = taxonomy_map[assembly_id]
+        if tax_info:
             lineage = tax_info.get('lineage', {})
             genus = lineage.get('genus', {}).get('name', 'Unknown')
             species = lineage.get('species', {}).get('name', 'Unknown')
@@ -2253,14 +2053,20 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
                         elif part.startswith('s__'):
                             lineage['species'] = part[3:] or 'Unknown'
 
-                    assembly_id = extract_assembly_id_from_genome_name(user_genome)
-                    if assembly_id:
-                        gtdb_taxonomy[assembly_id] = {
-                            'lineage': {
-                                'genus': {'name': lineage.get('genus', 'Unknown')},
-                                'species': {'name': lineage.get('species', 'Unknown')}
-                            }
+                    # GTDB-Tk prefixes user genomes with "usr_" to avoid clashes with
+                    # reference sequences. Strip it to match genome_gcf_mapping keys.
+                    genome_name = user_genome[4:] if user_genome.startswith('usr_') else user_genome
+                    tax_entry = {
+                        'lineage': {
+                            'genus': {'name': lineage.get('genus', 'Unknown')},
+                            'species': {'name': lineage.get('species', 'Unknown')}
                         }
+                    }
+                    gtdb_taxonomy[genome_name] = tax_entry
+                    # Also index by assembly_id as fallback
+                    assembly_id = extract_assembly_id_from_genome_name(genome_name)
+                    if assembly_id:
+                        gtdb_taxonomy[assembly_id] = tax_entry
 
             if gtdb_taxonomy:
                 taxonomy_map = gtdb_taxonomy
@@ -2516,18 +2322,6 @@ def generate_bgc_distribution_html(gcf_data, taxonomy_map, gtdbtk_summary_path=N
         </div>
     </div>
 
-    <div style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
-        <h4 style="margin-top: 0;">Summary Statistics</h4>
-        <ul style="margin: 10px 0; color: #555;">
-            <li><strong>{len(gcf_taxonomy)}</strong> GCFs analyzed across <strong>{len(genera)}</strong> genera</li>
-            <li><strong>{len(gcf_specificity)}</strong> genus-specific GCFs (potential taxon markers)</li>
-            <li><strong>{len(gcf_widespread)}</strong> widespread GCFs (found in 5+ genera)</li>
-        </ul>
-        <p style="color: #666; font-size: 0.9em; margin-bottom: 0;">
-            <strong>Interpretation:</strong> Genus-specific GCFs may represent recently evolved or taxon-restricted biosynthetic capabilities.
-            Widespread GCFs may indicate ancestral pathways or horizontal gene transfer events.
-        </p>
-    </div>
     '''
 
 
@@ -3238,11 +3032,11 @@ def generate_taxonomy_tree_html(taxonomy_tree_data):
     return tree_html
 
 def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_html='',
-                         bigslice_stats_html='', bigscape_stats_html='', gcf_visualization_html='',
-                         donut_chart_generated=False, phylo_tree_generated=False, genome_table_html='',
+                         bigscape_stats_html='', gcf_visualization_html='',
+                         phylo_tree_generated=False, genome_table_html='',
                          resource_usage_html='', phylo_tree_data=None, gcf_data=None, taxonomy_map=None,
-                         bigslice_section_html='', versions_data=None, rarefaction_stats=None,
-                         gtdbtk_summary_path=None):
+                         versions_data=None, rarefaction_stats=None,
+                         gtdbtk_summary_path=None, gcf_tree_b64=None):
     '''Generate tab-based HTML report combining all visualizations'''
 
     # Clean taxon name for URLs - match Nextflow sanitizeTaxon function
@@ -3340,8 +3134,8 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
                 record_id = bgc.get('record_id', '')
                 edge_badge = '<span style="background: #e74c3c; color: white; padding: 1px 5px; border-radius: 3px; font-size: 0.75em;">edge</span>' if str(contig_edge).lower() == 'true' else ''
                 # Build antiSMASH region link - format is #r{record_index}c{region} (e.g., #r11c1 for region 1 on record 11)
-                # Path: main_data_visualization/ -> main_analysis_results/taxon/ -> main_analysis_results/ -> results/ -> antismash_results/
-                antismash_link = f'../../../antismash_results/{taxon_clean}/{genome}/index.html#r{record_index}c{region}'
+                # Path: main_analysis_results/taxon/ -> main_analysis_results/ -> results/ -> antismash_results/
+                antismash_link = f'../../antismash_results/{taxon_clean}/{genome}/index.html#r{record_index}c{region}'
 
                 # Look up GCF info if available
                 gcf_cell = ''
@@ -3448,7 +3242,7 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
                 region = r['region']
                 region_name = r.get('region_name', region)
                 record_index = r.get('record_index', 1)
-                antismash_link = f'../../../antismash_results/{taxon_clean}/{genome}/index.html#r{record_index}c{region}'
+                antismash_link = f'../../antismash_results/{taxon_clean}/{genome}/index.html#r{record_index}c{region}'
                 bgc_links.append(f'<a href="{antismash_link}" target="_blank" style="color: #28a745;">{genome} Region {region_name}</a>')
             bgc_display = ', '.join(bgc_links)
             if len(regions) > 5:
@@ -3532,8 +3326,9 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
     kcb_stats_data = stats.get('kcb_stats', {})
     quick_stats_html = ''  # Merged into Summary Statistics
 
-    # --- Clustering Summary ---
-    clustering_summary_html = ''
+    # --- Clustering Summary (cards inlined into overview grid) ---
+    clustering_summary_html = ''  # No longer used as a separate section
+    bigscape_overview_cards = ''
     if gcf_data and isinstance(gcf_data, dict) and gcf_data.get('gcfs'):
         gcfs = gcf_data['gcfs']
         gcf_summary = gcf_data.get('summary', {})
@@ -3545,31 +3340,26 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
         largest_gcf_card = ''
         if largest_gcf:
             largest_gcf_card = f'''
-            <div style="background: linear-gradient(135deg, #7a6855 0%, #5d4e3f 100%); color: white; padding: 20px; border-radius: 10px;">
-                <div style="font-size: 2em; font-weight: bold;">{largest_gcf.get("member_count", 0)}</div>
-                <div style="opacity: 0.9;">Largest GCF Size</div>
-                <div style="font-size: 0.85em; margin-top: 5px; opacity: 0.8;">{largest_gcf.get("product", "")[:30]}</div>
-            </div>'''
+                <div style="background: rgba(122, 104, 85, 0.15); border: 1px solid rgba(122, 104, 85, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #7a6855;">{largest_gcf.get("member_count", 0)}</div>
+                    <div style="color: #555; font-size: 0.85em;">Largest GCF Size</div>
+                    <div style="font-size: 0.78em; margin-top: 2px; color: #777;">{largest_gcf.get("product", "")[:30]}</div>
+                </div>'''
 
-        clustering_summary_html = f'''
-    <div class="clustering-summary-section" style="margin-top: 30px;">
-        <h3>Clustering Summary (BiG-SCAPE)</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
-            <div style="background: linear-gradient(135deg, #5c6b7a 0%, #434d5a 100%); color: white; padding: 20px; border-radius: 10px;">
-                <div style="font-size: 2em; font-weight: bold;">{total_gcfs}</div>
-                <div style="opacity: 0.9;">Gene Cluster Families</div>
-            </div>
-            <div style="background: linear-gradient(135deg, #5a7a6b 0%, #435a4d 100%); color: white; padding: 20px; border-radius: 10px;">
-                <div style="font-size: 2em; font-weight: bold;">{clusters}</div>
-                <div style="opacity: 0.9;">Multi-member GCFs</div>
-            </div>
-            <div style="background: linear-gradient(135deg, #7a7a7a 0%, #5a5a5a 100%); color: white; padding: 20px; border-radius: 10px;">
-                <div style="font-size: 2em; font-weight: bold;">{singletons}</div>
-                <div style="opacity: 0.9;">Singletons</div>
-            </div>
-            {largest_gcf_card}
-        </div>
-    </div>'''
+        bigscape_overview_cards = f'''
+                <div style="background: rgba(92, 107, 122, 0.15); border: 1px solid rgba(92, 107, 122, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #5c6b7a;">{total_gcfs}</div>
+                    <div style="color: #555; font-size: 0.85em;">Gene Cluster Families</div>
+                </div>
+                <div style="background: rgba(90, 122, 107, 0.15); border: 1px solid rgba(90, 122, 107, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #5a7a6b;">{clusters}</div>
+                    <div style="color: #555; font-size: 0.85em;">Multi-member GCFs</div>
+                </div>
+                <div style="background: rgba(122, 122, 122, 0.15); border: 1px solid rgba(122, 122, 122, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #7a7a7a;">{singletons}</div>
+                    <div style="color: #555; font-size: 0.85em;">Singletons</div>
+                </div>
+                {largest_gcf_card}'''
 
     # --- Taxonomic Coverage ---
     taxonomic_coverage_html = ''
@@ -3615,7 +3405,9 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
         bigscape_section_html = f'''
             <div class="clustering-section">
                 <h3>BiG-SCAPE Gene Cluster Families</h3>
-                <div class="info-box">
+                {bigscape_stats_html if bigscape_stats_html else ''}
+                {gcf_visualization_html if gcf_visualization_html else ''}
+                <div class="info-box" style="margin-top: 20px;">
                     <p>BiG-SCAPE clusters biosynthetic gene clusters into gene cluster families based on sequence similarity.</p>
                     <p style="margin-top: 15px;"><strong>To view interactive results:</strong></p>
                     <ol style="margin: 10px 0 10px 20px; line-height: 1.8;">
@@ -3623,8 +3415,6 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
                         <li>Select database: <code>results/bigscape_results/{taxon_clean}/{taxon_clean}.db</code></li>
                     </ol>
                 </div>
-                {bigscape_stats_html if bigscape_stats_html else ''}
-                {gcf_visualization_html if gcf_visualization_html else ''}
             </div>'''
 
     # Build software versions HTML section
@@ -3635,7 +3425,6 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
         tool_names = {
             'antismash': 'antiSMASH',
             'bigscape': 'BiG-SCAPE',
-            'bigslice': 'BiG-SLiCE',
             'gtdbtk': 'GTDB-Tk',
             'taxonkit': 'TaxonKit',
             'nextflow': 'Nextflow',
@@ -3695,11 +3484,6 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
                     A plateau indicates sampling saturation - additional genomes would yield diminishing discovery of new GCFs.
                 </p>
                 <img src="rarefaction_curve.png" alt="GCF Rarefaction Curve" style="max-width: 100%; height: auto;">
-                <div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid {interpretation_color};">
-                    <strong style="color: {interpretation_color};">Saturation: {saturation:.0f}%</strong>
-                    <span style="color: #666; margin-left: 15px;">({total_gcfs} GCFs from {n_genomes} genomes)</span>
-                    <p style="margin: 10px 0 0 0; color: #555; font-size: 0.95em;">{interpretation}</p>
-                </div>
             </div>'''
 
     # Build BGC Distribution section HTML (replaces Tree View)
@@ -3715,6 +3499,7 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>BGC Analysis Report - {taxon}</title>
     <style>
         * {{ box-sizing: border-box; }}
@@ -3743,6 +3528,7 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
             transition: all 0.2s;
             border: 1px solid #ddd;
             border-bottom: none;
+            white-space: nowrap;
         }}
         .tabs label:hover {{
             background: #dee2e6;
@@ -3769,9 +3555,46 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
         #tab4:checked ~ #content4,
         #tab5:checked ~ #content5,
         #tab6:checked ~ #content6,
-        #tab7:checked ~ #content7,
-        #tab8:checked ~ #content8 {{
+        #tab7:checked ~ #content7 {{
             display: block;
+        }}
+
+        /* Collapsible details block (Pipeline Info in Overview) */
+        details.pipeline-info {{
+            margin-top: 30px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+        }}
+        details.pipeline-info > summary {{
+            padding: 12px 18px;
+            background: #f8f9fa;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1em;
+            color: #444;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        details.pipeline-info > summary::-webkit-details-marker {{ display: none; }}
+        details.pipeline-info > summary::before {{
+            content: '▶';
+            font-size: 0.75em;
+            transition: transform 0.2s;
+            display: inline-block;
+        }}
+        details.pipeline-info[open] > summary::before {{ transform: rotate(90deg); }}
+        details.pipeline-info > .details-body {{
+            padding: 20px 24px;
+        }}
+
+        /* Section divider within merged tabs */
+        .tab-section-divider {{
+            border: none;
+            border-top: 2px solid #e9ecef;
+            margin: 32px 0 28px;
         }}
 
         /* Stats Dashboard */
@@ -3940,115 +3763,97 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
         <label for="tab1">Overview</label>
 
         <input type="radio" id="tab2" name="tabs">
-        <label for="tab2">Taxonomy</label>
+        <label for="tab2">Phylogeny</label>
 
         <input type="radio" id="tab3" name="tabs">
-        <label for="tab3">BGC Distribution</label>
+        <label for="tab3">Genomes</label>
 
         <input type="radio" id="tab4" name="tabs">
-        <label for="tab4">Genomes</label>
+        <label for="tab4">GCF Analysis</label>
 
         <input type="radio" id="tab5" name="tabs">
-        <label for="tab5">Clustering</label>
+        <label for="tab5">Novel BGCs</label>
 
         <input type="radio" id="tab6" name="tabs">
-        <label for="tab6">Novel BGCs</label>
+        <label for="tab6">KCB Hits</label>
 
         <input type="radio" id="tab7" name="tabs">
-        <label for="tab7">KCB Hits</label>
-
-        <input type="radio" id="tab8" name="tabs">
-        <label for="tab8">Resources</label>
+        <label for="tab7">Pipeline</label>
 
         <!-- Tab 1: Overview -->
         <div class="tab-content" id="content1">
-            <h2>Summary Statistics</h2>
-            <!-- Genome Statistics -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px;">
-                <div style="background: rgba(44, 90, 160, 0.15); border: 1px solid rgba(44, 90, 160, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #2c5aa0;">{stats.get('total_genomes', 0)}</div>
-                    <div style="color: #555; font-size: 0.9em;">Total Genomes</div>
+            <!-- Combined stats grid: BGC stats + BiG-SCAPE clustering cards -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 8px;">
+                <div style="background: rgba(44, 90, 160, 0.15); border: 1px solid rgba(44, 90, 160, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #2c5aa0;">{stats.get('total_genomes', 0)}</div>
+                    <div style="color: #555; font-size: 0.85em;">Total Genomes</div>
                 </div>
-                <div style="background: rgba(58, 109, 153, 0.15); border: 1px solid rgba(58, 109, 153, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #3a6d99;">{stats.get('genomes_with_bgcs', 0)}</div>
-                    <div style="color: #555; font-size: 0.9em;">Genomes with BGCs</div>
+                <div style="background: rgba(58, 109, 153, 0.15); border: 1px solid rgba(58, 109, 153, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #3a6d99;">{stats.get('genomes_with_bgcs', 0)}</div>
+                    <div style="color: #555; font-size: 0.85em;">Genomes with BGCs</div>
                 </div>
-                <div style="background: rgba(74, 122, 143, 0.15); border: 1px solid rgba(74, 122, 143, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #4a7a8f;">{stats.get('genomes_with_no_bgcs', 0)}</div>
-                    <div style="color: #555; font-size: 0.9em;">Genomes without BGCs</div>
+                <div style="background: rgba(74, 122, 143, 0.15); border: 1px solid rgba(74, 122, 143, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #4a7a8f;">{stats.get('genomes_with_no_bgcs', 0)}</div>
+                    <div style="color: #555; font-size: 0.85em;">Genomes without BGCs</div>
                 </div>
-            </div>
-            <!-- BGC Statistics -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px;">
-                <div style="background: rgba(61, 139, 139, 0.15); border: 1px solid rgba(61, 139, 139, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #3d8b8b;">{stats.get('total_bgcs', 0)}</div>
-                    <div style="color: #555; font-size: 0.9em;">Total BGCs Found</div>
+                <div style="background: rgba(61, 139, 139, 0.15); border: 1px solid rgba(61, 139, 139, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #3d8b8b;">{stats.get('total_bgcs', 0)}</div>
+                    <div style="color: #555; font-size: 0.85em;">Total BGCs Found</div>
                 </div>
-                <div style="background: rgba(74, 149, 144, 0.15); border: 1px solid rgba(74, 149, 144, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #4a9590;">{stats.get('avg_bgcs', '0')}</div>
-                    <div style="color: #555; font-size: 0.9em;">Avg BGCs/Genome</div>
-                    <div style="font-size: 0.8em; margin-top: 3px; color: #777;">Range: {stats.get('min_bgcs', 0)} - {stats.get('max_bgcs', 0)}</div>
+                <div style="background: rgba(74, 149, 144, 0.15); border: 1px solid rgba(74, 149, 144, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #4a9590;">{stats.get('avg_bgcs', '0')}</div>
+                    <div style="color: #555; font-size: 0.85em;">Avg BGCs/Genome</div>
+                    <div style="font-size: 0.78em; margin-top: 2px; color: #777;">Range: {stats.get('min_bgcs', 0)}–{stats.get('max_bgcs', 0)}</div>
                 </div>
-                <div style="background: rgba(90, 159, 149, 0.15); border: 1px solid rgba(90, 159, 149, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #5a9f95;">{stats.get('most_common_bgc', 'N/A')}</div>
-                    <div style="color: #555; font-size: 0.9em;">Most Common BGC Type</div>
-                    <div style="font-size: 0.8em; margin-top: 3px; color: #777;">({stats.get('most_common_count', 0)} occurrences)</div>
+                <div style="background: rgba(90, 159, 149, 0.15); border: 1px solid rgba(90, 159, 149, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.2em; font-weight: bold; color: #5a9f95; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{stats.get('most_common_bgc', 'N/A')}">{stats.get('most_common_bgc', 'N/A')}</div>
+                    <div style="color: #555; font-size: 0.85em;">Most Common BGC Type</div>
+                    <div style="font-size: 0.78em; margin-top: 2px; color: #777;">{stats.get('most_common_count', 0)} occurrences</div>
                 </div>
-            </div>
-            <!-- BGC Quality/Novelty -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px;">
-                <div style="background: rgba(90, 138, 138, 0.15); border: 1px solid rgba(90, 138, 138, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #5a8a8a;">{kcb_stats.get('hit_percentage', 0)}%</div>
-                    <div style="color: #555; font-size: 0.9em;">Match Known Clusters</div>
-                    <div style="font-size: 0.8em; margin-top: 3px; color: #777;">{kcb_stats.get('regions_with_hits', 0)} of {kcb_stats.get('total_regions', 0)} BGCs</div>
+                <div style="background: rgba(90, 138, 138, 0.15); border: 1px solid rgba(90, 138, 138, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #5a8a8a;">{kcb_stats.get('hit_percentage', 0)}%</div>
+                    <div style="color: #555; font-size: 0.85em;">Match Known Clusters</div>
+                    <div style="font-size: 0.78em; margin-top: 2px; color: #777;">{kcb_stats.get('regions_with_hits', 0)} of {kcb_stats.get('total_regions', 0)} BGCs</div>
                 </div>
-                <div style="background: rgba(106, 122, 133, 0.15); border: 1px solid rgba(106, 122, 133, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #6a7a85;">{kcb_stats.get('novel_bgc_count', 0)}</div>
-                    <div style="color: #555; font-size: 0.9em;">Potentially Novel BGCs</div>
-                    <div style="font-size: 0.8em; margin-top: 3px; color: #777;">No match in MIBiG</div>
+                <div style="background: rgba(106, 122, 133, 0.15); border: 1px solid rgba(106, 122, 133, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #6a7a85;">{kcb_stats.get('novel_bgc_count', 0)}</div>
+                    <div style="color: #555; font-size: 0.85em;">Potentially Novel BGCs</div>
+                    <div style="font-size: 0.78em; margin-top: 2px; color: #777;">No match in MIBiG</div>
                 </div>
-                <div style="background: rgba(122, 122, 128, 0.15); border: 1px solid rgba(122, 122, 128, 0.3); padding: 12px 15px; border-radius: 8px;">
-                    <div style="font-size: 1.6em; font-weight: bold; color: #7a7a80;">{kcb_stats.get('contig_edge_count', 0)}</div>
-                    <div style="color: #555; font-size: 0.9em;">Contig Edge BGCs</div>
-                    <div style="font-size: 0.8em; margin-top: 3px; color: #777;">Potentially incomplete</div>
+                <div style="background: rgba(122, 122, 128, 0.15); border: 1px solid rgba(122, 122, 128, 0.3); padding: 10px 14px; border-radius: 8px;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #7a7a80;">{kcb_stats.get('contig_edge_count', 0)}</div>
+                    <div style="color: #555; font-size: 0.85em;">Contig Edge BGCs</div>
+                    <div style="font-size: 0.78em; margin-top: 2px; color: #777;">Potentially incomplete</div>
                 </div>
-            </div>
-
-            {clustering_summary_html}
-
-            <!-- BGC Type Distribution - Full Width -->
-            <div class="plot" style="max-width: none;">
-                <h3 style="margin-top: 0;">BGC Type Distribution</h3>
-                {'<img src="bgc_donut_chart.png" alt="BGC Type Distribution" style="max-width: 100%; height: auto;">' if donut_chart_generated else '<p style="color: #999;">No BGC data available</p>'}
-            </div>
-
-            <!-- BGC Identification Status - Centered -->
-            <div class="plot" style="max-width: 600px; margin: 20px auto;">
-                <h3 style="margin-top: 0;">BGC Identification Status</h3>
-                <img src="kcb_identification_chart.png" alt="KCB Identification Chart" onerror="this.parentElement.innerHTML='<p style=\\'color: #999;\\'>Run with --antismash_cb_knownclusters true to see identification data</p>'">
+                {bigscape_overview_cards}
             </div>
             {kcb_mapping_section}
             {rarefaction_section}
+
         </div>
 
-        <!-- Tab 2: Taxonomy -->
+        <!-- Tab 2: Phylogeny (Taxonomy tree + GTDB-Tk BGC distribution) -->
         <div class="tab-content" id="content2">
-            <h2>Taxonomic Distribution of BGCs</h2>
+            <h2>Phylogeny</h2>
+
+            <h3>Taxonomic Distribution of BGCs</h3>
             <p style="color: #666; margin-bottom: 20px;">
-                <em>Expandable taxonomy tree showing BGC statistics at each taxonomic level. Click on nodes to expand/collapse.
+                <em>Expandable NCBI taxonomy tree showing BGC statistics at each taxonomic level. Click on nodes to expand/collapse.
                 Species nodes expand to show individual genomes with their BGC counts.</em>
             </p>
             {tree_html if tree_html else '<div class="info-box warning"><p>Taxonomy tree data not available.</p></div>'}
-        </div>
 
-        <!-- Tab 3: BGC Distribution -->
-        <div class="tab-content" id="content3">
-            <h2>BGC Distribution</h2>
+            <hr class="tab-section-divider">
+
+            <h3>Phylogenetic BGC Distribution</h3>
+            <p style="color: #666; margin-bottom: 20px;">
+                <em>GTDB-Tk phylogenetic placement of BGC-positive genomes, showing BGC distribution across the phylogeny.</em>
+            </p>
             {tree_section}
         </div>
 
-        <!-- Tab 4: Genomes -->
-        <div class="tab-content" id="content4">
+        <!-- Tab 3: Genomes -->
+        <div class="tab-content" id="content3">
             <h2>All Genomes</h2>
             <p style="color: #666; margin-bottom: 15px;">
                 <em>Searchable table of all analyzed genomes. Click genome names for detailed metadata pages.</em>
@@ -4075,35 +3880,69 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
             </div>
         </div>
 
-        <!-- Tab 5: Clustering -->
-        <div class="tab-content" id="content5">
-            <h2>BGC Clustering Analysis</h2>
+        <!-- Tab 4: GCF Analysis (Clustering + Coupling Enzyme) -->
+        <div class="tab-content" id="content4">
+            <h2>GCF Analysis</h2>
+
+            <h3>Biosynthetic Phylogeny</h3>
+            <p style="color: #666; margin-bottom: 20px;">
+                <em>Classification of phosphonate BGCs by the coupling enzyme acting on phosphonopyruvate — the branching step
+                immediately downstream of PEP mutase that determines the downstream biosynthetic pathway.</em>
+            </p>
+
+            <div class="plot" style="margin-top: 20px;">
+                {'<img src="data:image/png;base64,' + gcf_tree_b64 + '" alt="GCF Biosynthetic Phylogeny" style="max-width: 100%; height: auto; display: block;">' if gcf_tree_b64 else '<div style="color: #999; padding: 20px; background: #f8f9fa; border-radius: 8px; text-align: center;">GCF biosynthetic tree not generated. Run the pipeline with <code>--clustering bigscape</code> to generate this figure.</div>'}
+                <p style="color: #666; font-size: 0.9em; margin-top: 10px;">
+                    Neighbor-Joining tree of Gene Cluster Families built from BiG-SCAPE center-to-center pairwise distances.
+                    Each node represents one GCF; color indicates the dominant coupling enzyme class; circle size is proportional to GCF membership.
+                </p>
+            </div>
+
+            <div style="margin-top: 24px; background: #f8f9fa; padding: 20px; border-radius: 10px;">
+                <h4 style="margin-top: 0;">Coupling Enzyme Classes</h4>
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                    <thead>
+                        <tr style="background: #e9ecef;">
+                            <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6;">Class</th>
+                            <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6;">Marker</th>
+                            <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6;">Pathway</th>
+                            <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6;">GCFs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">FrbC</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">SMCOG1271 (HMGL-like)</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">→ phosphonomethylmalate → phosphinothricin-type</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">GCF-2/3</td></tr>
+                        <tr style="background:#fafafa;"><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">Fe-ADH</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">Fe-ADH rule</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">→ phosphonolactate (reductase route)</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">GCF-4/6</td></tr>
+                        <tr><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">TPP+NTP</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">TPP_enzyme_C + NTP_transf_3</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">→ phosphonolipid (CDP-pathway)</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">GCF-5</td></tr>
+                        <tr style="background:#fafafa;"><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">Ppd</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">SMCOG1055 (ThDP-decarboxylase)</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">→ 2-phosphonoacetaldehyde → 2-AEP</td><td style="padding: 7px 12px; border-bottom: 1px solid #eee;">GCF-1/8</td></tr>
+                        <tr><td style="padding: 7px 12px;">Unknown</td><td style="padding: 7px 12px;">—</td><td style="padding: 7px 12px;">—</td><td style="padding: 7px 12px;">—</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <hr class="tab-section-divider">
 
             {bigscape_section_html}
-
-            {bigslice_section_html}
-
-            {f'<div class="info-box" style="background-color: #f8f9fa; border-left: 4px solid #6c757d;"><p style="color: #666;">No clustering analysis was performed. To enable clustering, run the pipeline with <code>--clustering bigscape</code> or <code>--clustering bigslice</code>.</p></div>' if not bigscape_section_html and not bigslice_section_html else ''}
+            {f'<div class="info-box" style="background-color: #f8f9fa; border-left: 4px solid #6c757d;"><p style="color: #666;">No clustering analysis was performed. To enable clustering, run the pipeline with <code>--clustering bigscape</code>.</p></div>' if not bigscape_section_html else ''}
         </div>
 
-        <!-- Tab 6: Novel BGCs -->
-        <div class="tab-content" id="content6">
+        <!-- Tab 5: Novel BGCs -->
+        <div class="tab-content" id="content5">
             {novel_bgcs_tab_content}
         </div>
 
-        <!-- Tab 7: KCB Hits -->
-        <div class="tab-content" id="content7">
+        <!-- Tab 6: KCB Hits -->
+        <div class="tab-content" id="content6">
             {kcb_hits_tab_content}
         </div>
 
-        <!-- Tab 8: Resources -->
-        <div class="tab-content" id="content8">
-            <h2>Pipeline Resource Usage</h2>
-            <p style="color: #666; margin-bottom: 20px;">
+        <!-- Tab 7: Pipeline Info -->
+        <div class="tab-content" id="content7">
+            <h2>Pipeline Information</h2>
+            <h3 style="margin-top: 20px;">Resource Usage</h3>
+            <p style="color: #666; margin-bottom: 20px; font-size: 0.9em;">
                 <em>Resource consumption metrics from Nextflow trace data, showing CPU, memory, and runtime for each pipeline process.</em>
             </p>
             {resource_usage_html if resource_usage_html else '<div class="info-box warning"><p>No resource usage data available. Trace data will appear here after running the pipeline.</p></div>'}
-
             {versions_html}
         </div>
     </div>
@@ -4198,7 +4037,7 @@ def generate_html_report(outdir, taxon, table_header, table_rows, stats, tree_ht
 </html>
 '''
 
-    with open(f'{outdir}/bgc_report.html', 'w') as f:
+    with open(f'{outdir}/bgc_report.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
 
 def main():
@@ -4211,7 +4050,6 @@ def main():
     parser.add_argument('--taxonomy_tree', type=Path, help='Path to taxonomy_tree.json')
     parser.add_argument('--phylo_tree', type=Path, help='Path to Newick phylogenetic tree file from GTDB-Tk')
     parser.add_argument('--gtdbtk_summary', type=Path, help='Path to GTDB-Tk summary TSV file')
-    parser.add_argument('--bigslice_stats', type=Path, help='Path to bigslice_statistics.json')
     parser.add_argument('--bigscape_stats', type=Path, help='Path to bigscape_statistics.json')
     parser.add_argument('--bigscape_db', type=Path, help='Path to BiG-SCAPE SQLite database for rarefaction curve')
     parser.add_argument('--gcf_data', type=Path, help='Path to gcf_representatives.json')
@@ -4222,6 +4060,7 @@ def main():
     parser.add_argument('--versions', type=Path, help='Path to software_versions.json')
     parser.add_argument('--skip_tree', action='store_true', help='Skip phylogenetic tree visualization (useful for very large datasets)')
     parser.add_argument('--outgroup', type=str, help='Outgroup taxon pattern for tree pruning (e.g., "g__Escherichia")')
+    parser.add_argument('--gcf_tree', type=Path, help='Path to GCF biosynthetic NJ tree PNG from GCF_BIOSYNTHETIC_TREE')
 
     args = parser.parse_args()
 
@@ -4246,8 +4085,6 @@ def main():
     tree_html = ''
     genome_table_html = ''
 
-    donut_chart_generated = False
-
     if args.counts:
         print(f"Generating count visualizations...")
 
@@ -4255,10 +4092,6 @@ def main():
         print(f"Calculating summary statistics...")
         tabulation_path = str(args.tabulation) if args.tabulation and args.tabulation.exists() else None
         stats = calculate_summary_statistics(args.counts, tabulation_path)
-
-        # Generate donut chart for overall BGC distribution
-        print(f"Generating BGC donut chart...")
-        donut_chart_generated = plot_bgc_donut_chart(args.counts, args.outdir)
 
         # Create genome metadata pages and genome table HTML
         if args.assembly_info and args.name_map:
@@ -4303,32 +4136,6 @@ def main():
         if phylo_tree_data:
             phylo_tree_generated = True
             print(f"Prepared interactive tree with {phylo_tree_data.get('leaf_count', 0)} genomes")
-
-    # Generate BiG-SLiCE statistics visualization
-    bigslice_stats_html = ''
-    if args.bigslice_stats and args.bigslice_stats.exists():
-        print(f"Generating BiG-SLiCE statistics visualization...")
-        bigslice_stats_html = generate_bigslice_stats_html(str(args.bigslice_stats))
-
-    # Generate BiG-SLiCE section HTML
-    bigslice_section_html = ''
-    if bigslice_stats_html:
-        # Sanitize taxon name to match Nextflow sanitizeTaxon function
-        taxon_sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', args.taxon)
-        taxon_sanitized = re.sub(r'_+', '_', taxon_sanitized).strip('_')
-        bigslice_section_html = f'''<div class="clustering-section">
-                <h3>BiG-SLiCE Clustering</h3>
-                <div class="info-box">
-                    <p>BiG-SLiCE provides scalable k-mer-based clustering with an interactive web interface.</p>
-                    <p style="margin-top: 15px;"><strong>To view results:</strong></p>
-                    <ol style="margin: 10px 0 10px 20px; line-height: 1.8;">
-                        <li>Navigate to: <code>cd results/bigslice_results/{taxon_sanitized}/bigslice_output/</code></li>
-                        <li>Start server: <code>bash start_server.sh</code></li>
-                        <li>Open: <a href="http://localhost:5000" target="_blank">http://localhost:5000</a></li>
-                    </ol>
-                </div>
-                {bigslice_stats_html}
-            </div>'''
 
     # Generate BiG-SCAPE statistics visualization
     bigscape_stats_html = ''
@@ -4388,10 +4195,6 @@ def main():
             resource_usage_html = generate_resource_usage_html(tasks, processes)
             print(f"Processed {len(tasks)} tasks from trace file")
 
-    if args.tabulation and args.tabulation.exists():
-        print(f"Generating KCB identification chart...")
-        plot_kcb_identification_chart(stats.get('kcb_stats', {}), args.outdir)
-
     # Load software versions if available
     versions_data = None
     if args.versions and args.versions.exists():
@@ -4402,17 +4205,24 @@ def main():
         except Exception as e:
             print(f"Warning: Could not load versions file: {e}")
 
+    # Load GCF biosynthetic tree image as base64 for embedding in report
+    gcf_tree_b64 = None
+    if args.gcf_tree and args.gcf_tree.exists():
+        import base64
+        with open(args.gcf_tree, 'rb') as f:
+            gcf_tree_b64 = base64.b64encode(f.read()).decode('ascii')
+
     if args.counts or args.tabulation:
         print(f"Generating HTML report...")
         generate_html_report(args.outdir, args.taxon, table_header, table_rows, stats, tree_html,
-                            bigslice_stats_html, bigscape_stats_html, gcf_visualization_html,
-                            donut_chart_generated, phylo_tree_generated,
+                            bigscape_stats_html, gcf_visualization_html,
+                            phylo_tree_generated,
                             genome_table_html, resource_usage_html, phylo_tree_data,
                             gcf_data=gcf_data_dict, taxonomy_map=taxonomy_map_dict,
-                            bigslice_section_html=bigslice_section_html,
                             versions_data=versions_data,
                             rarefaction_stats=rarefaction_stats,
-                            gtdbtk_summary_path=gtdbtk_summary_path)
+                            gtdbtk_summary_path=gtdbtk_summary_path,
+                            gcf_tree_b64=gcf_tree_b64)
         print(f"Visualizations complete! Open {args.outdir}/bgc_report.html in a browser.")
 
 if __name__ == '__main__':

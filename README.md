@@ -5,15 +5,15 @@
 [![Nextflow](https://img.shields.io/badge/nextflow-%E2%89%A523.04-brightgreen.svg)](https://www.nextflow.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-ClusterQuest is a Nextflow pipeline for comprehensive analysis of biosynthetic gene clusters (BGCs) in bacterial genomes. It integrates genome retrieval, BGC detection, clustering, and phylogenetic analysis into an integrated workflow with interactive visualization.
+ClusterQuest is a Nextflow pipeline for comprehensive analysis of phosphonate biosynthetic gene clusters (BGCs) in bacterial genomes. It integrates genome retrieval, BGC detection, clustering, and phylogenetic analysis into an integrated workflow with interactive visualization.
 
 ![Pipeline Overview](docs/pipeline_overview.png)
 
 ## Features
 
 - **Automated genome retrieval** from NCBI by taxon name (species, genus, family, or higher)
-- **BGC detection** using antiSMASH with KnownClusterBlast against MIBiG
-- **Gene cluster family (GCF) clustering** via BiG-SCAPE and/or BiG-SLiCE
+- **Phosphonate BGC detection** using antiSMASH with KnownClusterBlast against MIBiG (hardcoded to phosphonate rule)
+- **Gene cluster family (GCF) clustering** via BiG-SCAPE
 - **Phylogenetic placement** using GTDB-Tk for taxonomic context
 - **Cross-taxon result reuse** to avoid redundant computation when analyzing related taxa
 - **Interactive HTML report** with BGC statistics, taxonomy distribution, and GCF visualization
@@ -114,14 +114,15 @@ The SLURM profile automatically allocates:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--antismash_minimal` | `false` | Skip domain analysis for faster runs |
-| `--antismash_cb_knownclusters` | `true` | Compare BGCs against MIBiG |
 | `--reuse_antismash_from` | - | Reuse results from previous taxon |
+
+> **Note:** Detection is hardcoded to phosphonate BGCs only. KnownClusterBlast (`--cb-knownclusters`), `--clusterhmmer`, and `--tigrfam` are always enabled.
 
 ### Clustering
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--clustering` | `bigscape` | `none`, `bigscape`, `bigslice`, or `both` |
+| `--clustering` | `bigscape` | `none` or `bigscape` |
 | `--bigscape_cutoffs` | `0.30` | GCF distance threshold |
 | `--bigscape_mibig_version` | - | Include MIBiG in clustering (e.g., `3.1`) |
 
@@ -143,7 +144,7 @@ ClusterQuest is organized into modular subworkflows:
 |--------|-------------|
 | `DOWNLOAD_GENOMES` | Download and prepare bacterial genomes from NCBI |
 | `ANTISMASH_ANALYSIS` | BGC detection with optional result reuse |
-| `CLUSTERING` | GCF clustering via BiG-SCAPE and/or BiG-SLiCE |
+| `CLUSTERING` | GCF clustering via BiG-SCAPE |
 | `PHYLOGENY` | Phylogenetic placement using GTDB-Tk |
 | `VISUALIZE_RESULTS` | Interactive HTML report generation |
 
@@ -165,8 +166,11 @@ results/
 └── main_analysis_results/{taxon}/
     ├── region_counts.tsv             # BGC counts per genome
     ├── region_tabulation.tsv         # Detailed BGC information
-    └── main_data_visualization/
-        └── bgc_report.html           # Interactive report
+    ├── main_data_visualization/
+    │   └── bgc_report.html           # Interactive report
+    └── gcf_heatmap/
+        ├── gcf_species_heatmap.png   # GCF × species heatmap
+        └── gcf_species_heatmap.svg
 ```
 
 ## Cross-Taxon Result Reuse
@@ -196,7 +200,6 @@ If you use ClusterQuest in your research, please cite:
 
 - **antiSMASH**: Blin et al. (2023) Nucleic Acids Research
 - **BiG-SCAPE**: Navarro-Muñoz et al. (2020) Nature Chemical Biology
-- **BiG-SLiCE**: Kautsar et al. (2021) GigaScience
 - **GTDB-Tk**: Chaumeil et al. (2022) Bioinformatics
 
 ## Acknowledgments

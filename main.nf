@@ -10,7 +10,7 @@ nextflow.enable.dsl=2
  * Check if a clustering method is enabled.
  */
 def clusteringEnabled(method) {
-    params.clustering == method || params.clustering == "both"
+    params.clustering == method
 }
 
 /**
@@ -33,7 +33,7 @@ def validateParams() {
     }
 
     // Validate clustering
-    def validClustering = ['none', 'bigscape', 'bigslice', 'both']
+    def validClustering = ['none', 'bigscape']
     if (!(params.clustering in validClustering)) {
         errors << "Invalid clustering '${params.clustering}'. Valid options: ${validClustering.join(', ')}"
     }
@@ -42,6 +42,12 @@ def validateParams() {
     def validAlignmentModes = ['auto', 'global', 'glocal']
     if (!(params.bigscape_alignment_mode in validAlignmentModes)) {
         errors << "Invalid bigscape_alignment_mode '${params.bigscape_alignment_mode}'. Valid options: ${validAlignmentModes.join(', ')}"
+    }
+
+    // Validate bigscape classify scheme
+    def validClassify = ['', 'category', 'class', 'legacy']
+    if (!(params.bigscape_classify in validClassify)) {
+        errors << "Invalid bigscape_classify '${params.bigscape_classify}'. Valid options: ${validClassify.collect { it ?: '\"\"' }.join(', ')}"
     }
 
     // Validate bgc_analysis workflow has required input
@@ -89,9 +95,6 @@ def validateParams() {
     }
 }
 
-// Run validation
-validateParams()
-
 // =============================================================================
 // MODULE IMPORTS
 // =============================================================================
@@ -101,8 +104,6 @@ include { DOWNLOAD_PFAM } from './modules/databases/download_pfam'
 include { DOWNLOAD_ANTISMASH_DBS } from './modules/databases/download_antismash_dbs'
 include { DOWNLOAD_TAXONKIT_DB } from './modules/databases/download_taxonkit_db'
 include { DOWNLOAD_GTDBTK_DB } from './modules/databases/download_gtdbtk_db'
-include { DOWNLOAD_BIGSLICE_MODELS } from './modules/databases/download_bigslice_models'
-
 // Genome processing modules
 include { NCBI_DATASETS_DOWNLOAD } from './modules/genome/ncbi_datasets_download'
 include { CREATE_NAME_MAP } from './modules/genome/create_name_map'
@@ -119,9 +120,7 @@ include { AGGREGATE_TAXONOMY } from './modules/analysis/aggregate_taxonomy'
 
 // Clustering modules
 include { BIGSCAPE } from './modules/clustering/bigscape'
-include { BIGSLICE } from './modules/clustering/bigslice'
-include { EXTRACT_CLUSTERING_STATS as EXTRACT_BIGSCAPE_STATS } from './modules/clustering/extract_clustering_stats'
-include { EXTRACT_CLUSTERING_STATS as EXTRACT_BIGSLICE_STATS } from './modules/clustering/extract_clustering_stats'
+include { EXTRACT_CLUSTERING_STATS } from './modules/clustering/extract_clustering_stats'
 include { EXTRACT_GCF_REPRESENTATIVES } from './modules/clustering/extract_gcf_representatives'
 
 // Phylogenetic analysis modules
@@ -130,6 +129,7 @@ include { CHECK_GTDBTK_REUSE; FILTER_GTDBTK_RESULTS } from './modules/phylogeny/
 
 // Visualization modules
 include { VISUALIZE_RESULTS } from './modules/visualization/visualize_results'
+include { GCF_BIOSYNTHETIC_TREE } from './modules/visualization/gcf_biosynthetic_tree'
 
 // Utility modules
 include { COLLECT_VERSIONS } from './modules/utilities/collect_versions'
@@ -235,7 +235,7 @@ workflow ANTISMASH_ANALYSIS {
 }
 
 /*
- * Subworkflow: BiG-SCAPE and BiG-SLiCE clustering
+ * Subworkflow: BiG-SCAPE GCF clustering
  */
 workflow CLUSTERING {
     take:
@@ -249,14 +249,13 @@ workflow CLUSTERING {
         bigscape_stats_ch = placeholder('NO_BIGSCAPE_STATS')
         bigscape_db_ch = placeholder('NO_BIGSCAPE_DB')
         bigscape_dir_ch = placeholder('NO_BIGSCAPE_DIR')
-        bigslice_stats_ch = placeholder('NO_BIGSLICE_STATS')
         gcf_data_ch = placeholder('NO_GCF_DATA')
 
         if (clusteringEnabled("bigscape")) {
             DOWNLOAD_PFAM()
             BIGSCAPE(taxon, antismash_results, DOWNLOAD_PFAM.out.pfam_db)
-            EXTRACT_BIGSCAPE_STATS(taxon, "bigscape", BIGSCAPE.out.bigscape_dir)
-            bigscape_stats_ch = EXTRACT_BIGSCAPE_STATS.out.stats_json
+            EXTRACT_CLUSTERING_STATS(taxon, BIGSCAPE.out.bigscape_dir)
+            bigscape_stats_ch = EXTRACT_CLUSTERING_STATS.out.stats_json
             bigscape_db_ch = BIGSCAPE.out.bigscape_db
             bigscape_dir_ch = BIGSCAPE.out.bigscape_dir
 
@@ -267,17 +266,10 @@ workflow CLUSTERING {
             }
         }
 
-        if (clusteringEnabled("bigslice")) {
-            DOWNLOAD_BIGSLICE_MODELS()
-            BIGSLICE(taxon, antismash_results, DOWNLOAD_BIGSLICE_MODELS.out.models_dir, taxonomy_map, name_map)
-            EXTRACT_BIGSLICE_STATS(taxon, "bigslice", BIGSLICE.out.bigslice_dir)
-            bigslice_stats_ch = EXTRACT_BIGSLICE_STATS.out.stats_json
-        }
-
     emit:
         bigscape_stats = bigscape_stats_ch
         bigscape_db    = bigscape_db_ch
-        bigslice_stats = bigslice_stats_ch
+        bigscape_dir   = bigscape_dir_ch
         gcf_data       = gcf_data_ch
 }
 
@@ -419,6 +411,19 @@ workflow BGC_ANALYSIS {
                 ? Channel.value(file("${params.outdir}/pipeline_info/pipeline_trace.tsv"))
                 : Channel.value(file('NO_TRACE_FILE'))
 
+            // --- GCF Biosynthetic Tree (runs before visualization so its output can be embedded) ---
+            gcf_tree_png_ch = placeholder('NO_GCF_TREE')
+            if (clusteringEnabled("bigscape")) {
+                GCF_BIOSYNTHETIC_TREE(
+                    taxon,
+                    CLUSTERING.out.bigscape_db,
+                    antismash_results,
+                    PHYLOGENY.out.tree,
+                    PHYLOGENY.out.summary
+                )
+                gcf_tree_png_ch = GCF_BIOSYNTHETIC_TREE.out.gcf_tree_png.ifEmpty(file('NO_GCF_TREE'))
+            }
+
             VISUALIZE_RESULTS(
                 taxon,
                 counts_ch,
@@ -427,14 +432,14 @@ workflow BGC_ANALYSIS {
                 name_map,
                 taxonomy_map,
                 taxonomy_tree_ch,
-                CLUSTERING.out.bigslice_stats,
                 CLUSTERING.out.bigscape_stats,
                 CLUSTERING.out.bigscape_db,
                 CLUSTERING.out.gcf_data,
                 PHYLOGENY.out.tree,
                 PHYLOGENY.out.summary,
                 trace_file_ch,
-                versions_ch
+                versions_ch,
+                gcf_tree_png_ch
             )
         }
 }
@@ -443,39 +448,36 @@ workflow BGC_ANALYSIS {
  * Main entry point
  */
 workflow {
+    validateParams()
     def taxon_dir = Utils.sanitizeTaxon(params.taxon)
 
-    switch (params.workflow) {
-        case "download":
-            DOWNLOAD_GENOMES(params.taxon)
-            break
+    if (params.workflow == "download") {
+        DOWNLOAD_GENOMES(params.taxon)
 
-        case "bgc_analysis":
-            // Load from previous download run
-            def base_dir = "${params.outdir}/ncbi_genomes/${taxon_dir}"
-            def results_dir = "${params.outdir}/main_analysis_results/${taxon_dir}"
+    } else if (params.workflow == "bgc_analysis") {
+        // Load from previous download run
+        def base_dir = "${params.outdir}/ncbi_genomes/${taxon_dir}"
+        def results_dir = "${params.outdir}/main_analysis_results/${taxon_dir}"
 
-            BGC_ANALYSIS(
-                params.taxon,
-                Channel.fromPath("${params.input_genomes}/*.gbff"),
-                Channel.fromPath("${base_dir}/ncbi_dataset/data/assembly_info_table.txt"),
-                Channel.fromPath("${base_dir}/name_map.json"),
-                Channel.fromPath("${results_dir}/taxonomy_map.json")
-            )
-            break
+        BGC_ANALYSIS(
+            params.taxon,
+            Channel.fromPath("${params.input_genomes}/*.gbff"),
+            Channel.fromPath("${base_dir}/ncbi_dataset/data/assembly_info_table.txt"),
+            Channel.fromPath("${base_dir}/name_map.json"),
+            Channel.fromPath("${results_dir}/taxonomy_map.json")
+        )
 
-        case "full":
-            DOWNLOAD_GENOMES(params.taxon)
-            BGC_ANALYSIS(
-                params.taxon,
-                DOWNLOAD_GENOMES.out.renamed_genomes,
-                DOWNLOAD_GENOMES.out.assembly_info,
-                DOWNLOAD_GENOMES.out.name_map,
-                DOWNLOAD_GENOMES.out.taxonomy_map
-            )
-            break
+    } else if (params.workflow == "full") {
+        DOWNLOAD_GENOMES(params.taxon)
+        BGC_ANALYSIS(
+            params.taxon,
+            DOWNLOAD_GENOMES.out.renamed_genomes,
+            DOWNLOAD_GENOMES.out.assembly_info,
+            DOWNLOAD_GENOMES.out.name_map,
+            DOWNLOAD_GENOMES.out.taxonomy_map
+        )
 
-        default:
-            error "ERROR: Invalid workflow '${params.workflow}'. Valid options: 'download', 'bgc_analysis', 'full'"
+    } else {
+        error "ERROR: Invalid workflow '${params.workflow}'. Valid options: 'download', 'bgc_analysis', 'full'"
     }
 }

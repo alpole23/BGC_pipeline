@@ -303,10 +303,10 @@ def extract_gcf_representatives(bigscape_dir, antismash_dir, output_file, taxon=
                 print(f"Warning: Could not find antiSMASH JSON for genome {genome_name}")
 
             # Build antiSMASH link
-            # Link is relative from main_data_visualization folder to antismash_results
-            # Path: main_analysis_results/{taxon}/main_data_visualization/ -> antismash_results/{taxon}/{genome}/
+            # Link is relative from taxon results folder to antismash_results
+            # Path: main_analysis_results/{taxon}/ -> antismash_results/{taxon}/{genome}/
             # Anchor format: #r{record_index}c{region_number}
-            antismash_link = f"../../../antismash_results/{taxon_name}/{genome_name}/index.html#r{record_index}c{region_number}" if genome_name else None
+            antismash_link = f"../../antismash_results/{taxon_name}/{genome_name}/index.html#r{record_index}c{region_number}" if genome_name else None
 
             # Look up KCB hit for this representative BGC
             # Key format: (genome, region_name) where region_name = "{record_index}.{region_number}"

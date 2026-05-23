@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clustering visualization functions for BiG-SCAPE and BiG-SLiCE results."""
+"""Clustering visualization functions for BiG-SCAPE results."""
 
 import json
 import os
@@ -9,136 +9,6 @@ from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-
-def generate_bigslice_stats_html(bigslice_stats_file):
-    """Generate HTML for BiG-SLiCE clustering statistics."""
-    if not os.path.exists(bigslice_stats_file) or os.path.basename(bigslice_stats_file).startswith('NO_'):
-        return ''
-
-    try:
-        with open(bigslice_stats_file, 'r') as f:
-            stats = json.load(f)
-    except Exception as e:
-        print(f"Warning: Could not read BiG-SLiCE statistics: {e}")
-        return ''
-
-    if 'error' in stats:
-        return f'''
-    <h3>BiG-SLiCE Clustering Statistics</h3>
-    <div class="info-box" style="background-color: #fff3cd; border-left: 4px solid #ffc107;">
-        <p><strong>Note:</strong> {stats['error']}</p>
-    </div>
-    '''
-
-    # Generate fragmentation breakdown
-    frag_html = ''
-    if 'fragmentation' in stats:
-        frag_rows = []
-        for frag_type, frag_data in stats['fragmentation'].items():
-            frag_rows.append(f'''
-                <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">{frag_type.capitalize()}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{frag_data['count']}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{frag_data['avg_distance']}</td>
-                </tr>
-            ''')
-        frag_html = f'''
-            <tr>
-                <td colspan="3" style="padding: 12px 8px 4px 8px; font-weight: bold; color: #666;">Fragmentation Breakdown:</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 2px solid #999; font-weight: bold;">Type</td>
-                <td style="padding: 8px; border-bottom: 2px solid #999; font-weight: bold; text-align: right;">Count</td>
-                <td style="padding: 8px; border-bottom: 2px solid #999; font-weight: bold; text-align: right;">Avg Distance</td>
-            </tr>
-            {''.join(frag_rows)}
-        '''
-
-    # Generate GCF size distribution preview (top 5)
-    gcf_dist_html = ''
-    if 'gcf_distribution' in stats and stats['gcf_distribution']:
-        top_gcfs = stats['gcf_distribution'][:5]
-        gcf_rows = []
-        for gcf in top_gcfs:
-            gcf_rows.append(f'''
-                <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">GCF {gcf['gcf_id']}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{gcf['bgc_count']}</td>
-                </tr>
-            ''')
-        more_text = ''
-        if len(stats['gcf_distribution']) > 5:
-            more_text = f'''
-                <tr>
-                    <td colspan="2" style="padding: 8px; text-align: center; color: #666; font-style: italic;">
-                        ... and {len(stats['gcf_distribution']) - 5} more GCFs
-                    </td>
-                </tr>
-            '''
-        gcf_dist_html = f'''
-            <tr>
-                <td colspan="2" style="padding: 12px 8px 4px 8px; font-weight: bold; color: #666;">Top Gene Cluster Families:</td>
-            </tr>
-            {''.join(gcf_rows)}
-            {more_text}
-        '''
-
-    return f'''
-    <h3>BiG-SLiCE Clustering Statistics</h3>
-    <div class="info-box">
-        <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; font-weight: bold;">Total BGCs</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right; font-weight: bold;">{stats.get('total_bgcs', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; font-weight: bold;">Total GCFs</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right; font-weight: bold;">{stats.get('total_gcfs', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Distance Threshold (T)</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('threshold', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Avg. Distance to GCF</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('avg_distance_to_gcf', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">BGCs Assigned (d <= T)</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('bgcs_assigned', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">BGCs Not Assigned (d > T)</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('bgcs_not_assigned', 0)}</td>
-            </tr>
-            <tr>
-                <td colspan="2" style="padding: 12px 8px 4px 8px; font-weight: bold; color: #666;">GCF Size Statistics:</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Min BGCs per GCF</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('min_bgcs_per_gcf', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Avg BGCs per GCF</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('avg_bgcs_per_gcf', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Max BGCs per GCF</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('max_bgcs_per_gcf', 0)}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">Singleton GCFs (n=1)</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">{stats.get('singleton_gcfs', 0)}</td>
-            </tr>
-            {frag_html}
-            {gcf_dist_html}
-        </table>
-        <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
-            <strong>Note:</strong> Statistics extracted from BiG-SLiCE database. For detailed analysis, use the BiG-SLiCE web interface or query the database directly.
-        </p>
-    </div>
-    '''
 
 
 def generate_bigscape_stats_html(bigscape_stats_file, mibig_included=False):
@@ -155,7 +25,6 @@ def generate_bigscape_stats_html(bigscape_stats_file, mibig_included=False):
 
     if 'error' in stats:
         return f'''
-    <h3>BiG-SCAPE Clustering Statistics</h3>
     <div class="info-box" style="background-color: #fff3cd; border-left: 4px solid #ffc107;">
         <p><strong>Note:</strong> {stats['error']}</p>
     </div>
@@ -195,7 +64,6 @@ def generate_bigscape_stats_html(bigscape_stats_file, mibig_included=False):
         mibig_families_display = '<span style="color: #999;" title="MIBiG references were not included in this analysis">N/A</span>'
 
     return f'''
-    <h3>BiG-SCAPE Clustering Statistics</h3>
     <div class="info-box">
         <table style="width: 100%; border-collapse: collapse;">
             <tr>
