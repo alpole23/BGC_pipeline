@@ -15,7 +15,7 @@ process CHECK_GTDBTK_REUSE {
     path genome_list  // File with list of genome names (one per line)
 
     output:
-    tuple env(STATUS), env(REUSE_SUMMARY), env(REUSE_TREE), emit: check_result
+    tuple env('STATUS'), env('REUSE_SUMMARY'), env('REUSE_TREE'), emit: check_result
 
     script:
     // Use Utils helper to build absolute reuse path
@@ -74,7 +74,7 @@ process CHECK_GTDBTK_REUSE {
 process FILTER_GTDBTK_RESULTS {
     tag "${taxon}"
     label 'process_medium'
-    publishDir "${params.outdir}/gtdbtk_results/${Utils.sanitizeTaxon(taxon)}", mode: 'copy'
+    publishDir "${params.outdir}/gtdbtk_results/${Utils.sanitizeTaxon(params.taxon)}", mode: 'copy'
 
     input:
     val taxon

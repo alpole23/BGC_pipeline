@@ -1,7 +1,7 @@
 process COUNT_REGIONS {
     tag "$taxon"
     label 'process_low'
-    publishDir "${params.outdir}/main_analysis_results/${Utils.sanitizeTaxon(taxon)}", mode: 'copy'
+    publishDir "${params.outdir}/main_analysis_results/${Utils.sanitizeTaxon(params.taxon)}", mode: 'copy'
 
     input:
     val taxon

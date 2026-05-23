@@ -10,11 +10,11 @@ process BIGSCAPE {
     path pfam_db
     
     output:
-    path "${Utils.sanitizeTaxon(taxon)}/", emit: bigscape_dir
-    path "${Utils.sanitizeTaxon(taxon)}/${Utils.sanitizeTaxon(taxon)}.db", emit: bigscape_db
+    path "${Utils.sanitizeTaxon(params.taxon)}/", emit: bigscape_dir
+    path "${Utils.sanitizeTaxon(params.taxon)}/${Utils.sanitizeTaxon(params.taxon)}.db", emit: bigscape_db
 
     script:
-    def safe_taxon = Utils.sanitizeTaxon(taxon)
+    def safe_taxon = Utils.sanitizeTaxon(params.taxon)
     def cutoffs = params.bigscape_cutoffs ?: "0.30"
     def alignment_mode = params.bigscape_alignment_mode ?: "auto"
     def mibig_version = params.bigscape_mibig_version ? "--mibig-version ${params.bigscape_mibig_version}" : ""

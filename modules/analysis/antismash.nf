@@ -20,7 +20,7 @@ process ANTISMASH {
     label 'process_medium'
     label 'tolerant'
     cache 'lenient'
-    publishDir "${params.outdir}/antismash_results/${Utils.sanitizeTaxon(taxon)}", mode: 'copy'
+    publishDir "${params.outdir}/antismash_results/${Utils.sanitizeTaxon(params.taxon)}", mode: 'copy'
 
     input:
     val taxon
@@ -33,9 +33,8 @@ process ANTISMASH {
     path "${genome.baseName}/", emit: result_dir, optional: true
 
     script:
-    // Handle hmmdetection_rules - only add flag if it's a valid non-empty rule name
-    def rules = params.hmmdetection_rules?.toString() ?: ''
-    def hmmdetection_flag = (rules && rules != 'true' && rules != 'false' && rules.trim().length() > 0) ? "--hmmdetection-limit-to-rule-names ${rules}" : ''
+    // Phosphonate-only detection — hardcoded
+    def hmmdetection_flag = '--hmmdetection-limit-to-rule-names phosphonate'
 
     // Build minimal mode flag
     def minimal_flag = params.antismash_minimal ? '--minimal' : ''
@@ -46,7 +45,7 @@ process ANTISMASH {
     // Build antiSMASH analysis flags based on config (ClusterBlast options ignored in minimal mode)
     def cb_general_flag = params.antismash_minimal ? '' : (params.antismash_cb_general ? '--cb-general' : '')
     def cc_mibig_flag = params.antismash_minimal ? '' : (params.antismash_cc_mibig ? '--cc-mibig' : '')
-    def cb_knownclusters_flag = params.antismash_minimal ? '' : (params.antismash_cb_knownclusters ? '--cb-knownclusters' : '')
+    def cb_knownclusters_flag = params.antismash_minimal ? '' : '--cb-knownclusters'   // hardcoded: always compare vs MIBiG
     def smcog_trees_flag = params.antismash_minimal ? '' : (params.antismash_smcog_trees ? '--smcog-trees' : '')
 
     // Domain analysis flags - always enabled when not in minimal mode

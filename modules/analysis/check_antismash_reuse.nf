@@ -19,7 +19,7 @@ process CHECK_ANTISMASH_REUSE {
     val antismash_params_hash
 
     output:
-    tuple path(genome), env(STATUS), env(EXISTING_PATH), emit: check_result
+    tuple path(genome), env('STATUS'), env('EXISTING_PATH'), emit: check_result
 
     script:
     def genome_name = genome.baseName
@@ -65,7 +65,7 @@ process CHECK_ANTISMASH_REUSE {
 process COPY_ANTISMASH_RESULT {
     tag "$genome_name"
     label 'process_low'
-    publishDir "${params.outdir}/antismash_results/${Utils.sanitizeTaxon(taxon)}", mode: 'copy'
+    publishDir "${params.outdir}/antismash_results/${Utils.sanitizeTaxon(params.taxon)}", mode: 'copy'
 
     input:
     val taxon

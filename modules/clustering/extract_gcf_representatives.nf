@@ -1,7 +1,7 @@
 process EXTRACT_GCF_REPRESENTATIVES {
     tag "$taxon"
     label 'process_low'
-    publishDir "${params.outdir}/bigscape_results/${Utils.sanitizeTaxon(taxon)}", mode: 'copy'
+    publishDir "${params.outdir}/bigscape_results/${Utils.sanitizeTaxon(params.taxon)}", mode: 'copy'
 
     input:
     val taxon
@@ -13,7 +13,7 @@ process EXTRACT_GCF_REPRESENTATIVES {
     path "gcf_representatives.json", emit: gcf_data
 
     script:
-    def taxon_clean = Utils.sanitizeTaxon(taxon)
+    def taxon_clean = Utils.sanitizeTaxon(params.taxon)
     def tabulation_arg = tabulation_file.name != 'NO_TABULATION' ? "--tabulation ${tabulation_file}" : ""
     """
     python ${projectDir}/scripts/clustering/extract_gcf_representatives.py ${bigscape_dir} antismash_input gcf_representatives.json --taxon "${taxon_clean}" ${tabulation_arg}

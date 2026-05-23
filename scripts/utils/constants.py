@@ -72,3 +72,60 @@ KCB_COLORS = {
     'medium': '#fd7e14',  # Orange
     'low': '#6c757d',     # Gray
 }
+
+# Coupling enzyme class colors (used across bgc_gcf_tree, bgc_gcf_heatmap,
+# bgc_all_bgcs_tree, bgc_coupling_tree, bgc_coupling_annotation)
+COUPLING_COLORS = {
+    'FrbC-like': '#e41a1c',
+    'Ppd':       '#377eb8',
+    'Ppd-CDP':   '#984ea3',
+    'VlpB-like': '#4daf4a',
+    'PalB-like': '#ff7f00',
+    'Unknown':   '#aaaaaa',
+}
+
+# Display order for coupling enzyme classes in legends
+COUPLING_ORDER = ['FrbC-like', 'VlpB-like', 'Ppd', 'Ppd-CDP', 'PalB-like', 'Unknown']
+
+# Normalize legacy coupling class names from older annotation files
+LEGACY_CLASS_NAMES = {
+    'Fe-ADH':  'VlpB-like',
+    'TPP+NTP': 'Ppd-CDP',
+    'PalB':    'PalB-like',
+    'FrbC':    'FrbC-like',
+}
+
+# Pfam accession → short human-readable name.
+# Verified against antiSMASH clusterhmmer output on phosphonate BGCs.
+# Add entries here as needed; unknown domains fall back to their accession.
+DOMAIN_NAMES = {
+    'PF13714': 'PEP_mutase',
+    'PF00296': 'HEPD',           # 2-hydroxyethylphosphonate dioxygenase
+    'PF02775': 'ThDP_C',         # phosphonopyruvate decarboxylase (C-term)
+    'PF02776': 'ThDP_N',         # phosphonopyruvate decarboxylase (N-term)
+    'PF00266': 'Aminotrans_V',   # 2-AEP transaminase (class V)
+    'PF00155': 'Aminotrans_I',   # aminotransferase class I/II
+    'PF00682': 'FrbC_HMGL',      # FrbC-like / phosphonomethylmalate synthase (HMGL superfamily)
+    'PF13649': 'Radical_SAM',
+    'PF08241': 'Methyltransf',
+    'PF00330': 'Aconitase',
+    'PF00694': 'Aconitase_C',
+    'PF00149': 'Metallophos',    # calcineurin-like phosphoesterase
+    'PF00571': 'CBS',
+    'PF07690': 'MFS_transporter',
+    'PF00005': 'ABC_ATPase',
+    'PF01118': 'SemiAldDH_NAD',  # semialdehyde dehydrogenase
+    'PF02774': 'SemiAldDH_C',
+    'PF00464': 'SHMT',           # serine hydroxymethyltransferase
+    'PF12804': 'NTP_transf',
+    'PF13673': 'Acetyltransf',
+    'PF07228': 'DUF1453',
+    'PF00733': 'Asn_synthase',
+    'PF13537': 'GATase',
+    'PF00581': 'Rhodanese',
+    'PF01613': 'Trp_syntA',
+    'PF00202': 'Aminotrans_III',
+    'PF00892': 'EamA_transporter',
+    'PF22617': 'PF22617',
+    'PF05321': 'PF05321',
+}

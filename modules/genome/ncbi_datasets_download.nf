@@ -2,7 +2,7 @@ process NCBI_DATASETS_DOWNLOAD {
     tag "$taxon"
     label 'process_medium'
     label 'retry_on_error'
-    publishDir "${params.outdir}/ncbi_genomes/${Utils.sanitizeTaxon(taxon)}", mode: 'copy'
+    publishDir "${params.outdir}/ncbi_genomes/${Utils.sanitizeTaxon(params.taxon)}", mode: 'copy'
 
     input:
     val taxon

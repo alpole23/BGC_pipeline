@@ -30,9 +30,9 @@ class Utils {
             "minimal=${params.antismash_minimal ?: false}",
             "cb_general=${params.antismash_cb_general ?: false}",
             "cc_mibig=${params.antismash_cc_mibig ?: false}",
-            "cb_knownclusters=${params.antismash_cb_knownclusters ?: true}",
+            "cb_knownclusters=true",
             "smcog_trees=${params.antismash_smcog_trees ?: false}",
-            "hmmdetection_rules=${params.hmmdetection_rules ?: ''}"
+            "hmmdetection_rules=phosphonate"
         ].sort().join(";")
 
         // Return MD5 hash of the parameter string
@@ -79,5 +79,16 @@ class Utils {
             return input.size() > 0 && !input[0].name?.startsWith('NO_')
         }
         return !input.name?.startsWith('NO_')
+    }
+
+    /**
+     * Return the first file from an input that may be a single file or a list.
+     *
+     * @param input A file path or list of file paths
+     * @return The first (or only) file
+     */
+    static getFirstFile(input) {
+        if (input instanceof List) return input[0]
+        return input
     }
 }

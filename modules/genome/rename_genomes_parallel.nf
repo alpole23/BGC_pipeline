@@ -1,7 +1,7 @@
 process RENAME_GENOMES {
     tag "$assembly_id"
     label 'process_low'
-    publishDir "${params.outdir}/ncbi_genomes/${Utils.sanitizeTaxon(taxon)}/renamed_genomes", mode: 'copy'
+    publishDir "${params.outdir}/ncbi_genomes/${Utils.sanitizeTaxon(params.taxon)}/renamed_genomes", mode: 'copy'
 
     input:
     val taxon
